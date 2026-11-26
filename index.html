@@ -3,1202 +3,1485 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>NEUROVECTOR — Sistema de control vectorial para brazo robótico de rehabilitación</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; user-select: none; }
-        body {
-            margin: 0;
-            overflow: hidden;
-            font-family: 'Inter', sans-serif;
-            background: radial-gradient(circle at 50% 15%, #0c2238 0%, #040911 80%);
-            color: #e2e8f0;
+        /* =========================================================
+           1. ESTILOS BASE Y VARIABLES (CSS PURO — SIN CDN EXTERNO)
+           ========================================================= */
+        :root {
+            --bg-deep: #0a101d;
+            --bg-panel: rgba(10, 18, 32, 0.92);
+            --bg-card: rgba(13, 25, 45, 0.88);
+            --bg-input: #060d18;
+            --emerald: #10b981;
+            --emerald-bright: #34d399;
+            --cyan: #38bdf8;
+            --cyan-bright: #22d3ee;
+            --amber: #fbbf24;
+            --rose: #f43f5e;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --border-subtle: rgba(56, 189, 248, 0.28);
+            --border-emerald: rgba(16, 185, 129, 0.45);
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
         }
-        .font-mono-code { font-family: 'JetBrains Mono', monospace; }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: var(--font-sans);
+            background: radial-gradient(circle at 50% 10%, #0f2744 0%, var(--bg-deep) 78%);
+            color: var(--text-main);
+            user-select: none;
+        }
+
+        .hidden { display: none !important; }
+        .mono { font-family: var(--font-mono); }
+
+        /* =========================================================
+           2. CANVAS 3D FIJO EN CAPA BASE (Z-INDEX 0)
+           ========================================================= */
         #canvas-container {
             position: fixed;
             inset: 0;
             width: 100vw;
             height: 100vh;
-            z-index: 1;
+            z-index: 0;
+            touch-action: none;
         }
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
+
+        #collision-flash-layer {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 15;
         }
-        input[type="number"] {
-            -moz-appearance: textfield;
-            font-family: 'JetBrains Mono', monospace;
+
+        @keyframes flashRed {
+            0%, 100% { box-shadow: inset 0 0 0 0 rgba(244, 63, 94, 0); }
+            50% { box-shadow: inset 0 0 80px 22px rgba(244, 63, 94, 0.55); }
         }
-        .hub-bg {
-            background: radial-gradient(circle at 50% 8%, #0e2942 0%, #050b14 75%);
+        .flash-active { animation: flashRed 0.55s ease-in-out 2; }
+
+        /* Etiquetas 3D proyectadas sobre el canvas */
+        #labels-layer {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 5;
         }
-        .card-surgical {
-            background: rgba(11, 23, 41, 0.84);
-            border: 1px solid rgba(52, 211, 153, 0.32);
-            box-shadow: 0 6px 26px rgba(0, 0, 0, 0.45), inset 0 0 18px rgba(34, 211, 238, 0.05);
-            transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .card-surgical:hover {
-            border-color: rgba(52, 211, 153, 0.85);
-            transform: translateY(-3px);
-            box-shadow: 0 12px 32px rgba(16, 185, 129, 0.18), inset 0 0 22px rgba(34, 211, 238, 0.12);
-        }
-        .card-locked {
-            background: rgba(9, 17, 30, 0.78);
-            border: 1px solid rgba(51, 65, 85, 0.65);
-            transition: all 0.2s ease;
-        }
-        .card-locked:hover {
-            border-color: rgba(56, 189, 248, 0.55);
-            transform: translateY(-2px);
-        }
-        .glass-panel {
-            background: rgba(10, 20, 35, 0.92);
-            backdrop-filter: blur(14px);
-            border: 1px solid rgba(45, 212, 191, 0.35);
-            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
-        }
-        .title-glow {
-            text-shadow: 0 0 28px rgba(52, 211, 153, 0.45);
-        }
-        .btn-primary-gradient {
-            background: linear-gradient(90deg, #22d3ee 0%, #34d399 100%);
-            color: #041f26;
-            font-weight: 800;
-            box-shadow: 0 0 20px rgba(52, 211, 153, 0.35);
-            transition: all 0.2s ease;
-        }
-        .btn-primary-gradient:hover {
-            filter: brightness(1.07);
-            box-shadow: 0 0 28px rgba(52, 211, 153, 0.65);
-            transform: translateY(-1px);
-        }
-        .btn-primary-gradient:active { transform: translateY(1px); }
+
         .world-label {
             position: absolute;
-            pointer-events: none;
             transform: translate(-50%, -100%);
-            transition: opacity 0.12s ease;
-            z-index: 6;
             white-space: nowrap;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            background: rgba(6, 13, 24, 0.9);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            transition: opacity 0.12s ease;
         }
-        @keyframes pulseAlert {
-            0%, 100% { box-shadow: inset 0 0 0 0 rgba(244, 63, 94, 0); }
-            50% { box-shadow: inset 0 0 70px 18px rgba(244, 63, 94, 0.45); }
+        #label-pi { color: var(--cyan-bright); border: 1px solid rgba(56, 189, 248, 0.55); }
+        #label-pf { color: var(--emerald-bright); border: 1px solid rgba(16, 185, 129, 0.65); }
+        #label-preview { color: var(--amber); border: 1px solid rgba(251, 191, 36, 0.6); }
+
+        /* =========================================================
+           3. COMPONENTES REUTILIZABLES (PANELES Y BOTONES)
+           ========================================================= */
+        .panel {
+            background: var(--bg-panel);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
         }
-        .collision-flash { animation: pulseAlert 0.65s ease-in-out 2; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
-        ::-webkit-scrollbar-thumb { background: rgba(45, 212, 191, 0.4); border-radius: 9999px; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border: none;
+            border-radius: 12px;
+            font-family: var(--font-sans);
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.15s ease, filter 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+        }
+        .btn:active { transform: scale(0.97); }
+
+        .btn-primary {
+            background: linear-gradient(90deg, #22d3ee 0%, #10b981 100%);
+            color: #041d24;
+            padding: 12px 22px;
+            font-size: 14px;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.35);
+        }
+        .btn-primary:hover { filter: brightness(1.08); box-shadow: 0 0 28px rgba(16, 185, 129, 0.55); }
+
+        .btn-secondary {
+            background: rgba(15, 29, 52, 0.92);
+            color: var(--text-main);
+            border: 1px solid var(--border-emerald);
+            padding: 11px 20px;
+            font-size: 14px;
+        }
+        .btn-secondary:hover { background: rgba(24, 46, 78, 0.95); border-color: var(--emerald-bright); }
+
+        .btn-sm {
+            padding: 7px 12px;
+            font-size: 12px;
+            border-radius: 10px;
+        }
+
+        .btn-danger {
+            background: rgba(244, 63, 94, 0.18);
+            color: #fda4af;
+            border: 1px solid rgba(244, 63, 94, 0.45);
+        }
+        .btn-danger:hover { background: rgba(244, 63, 94, 0.32); }
+
+        .btn-ghost {
+            background: rgba(15, 23, 42, 0.88);
+            color: var(--text-main);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+        .btn-ghost:hover { background: rgba(30, 41, 59, 0.95); border-color: var(--cyan); }
+
+        /* =========================================================
+           4. MENÚ PRINCIPAL (HUB DE MISIONES — Z-INDEX 30)
+           ========================================================= */
+        #screen-hub {
+            position: fixed;
+            inset: 0;
+            z-index: 30;
+            background: radial-gradient(circle at 50% 8%, #0e2845 0%, #060b14 78%);
+            overflow-y: auto;
+            padding: 20px 16px 28px;
+        }
+
+        .hub-container {
+            max-width: 1240px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .hub-header {
+            text-align: center;
+        }
+        .hub-title {
+            font-size: clamp(32px, 6vw, 54px);
+            font-weight: 900;
+            letter-spacing: 2px;
+            line-height: 1.05;
+            text-shadow: 0 0 26px rgba(16, 185, 129, 0.45);
+        }
+        .hub-title span { color: var(--emerald-bright); }
+        .hub-subtitle {
+            color: var(--text-muted);
+            font-size: clamp(12px, 2vw, 15px);
+            margin-top: 6px;
+        }
+
+        /* 4 Indicadores superiores */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            padding: 14px 10px;
+            text-align: center;
+        }
+        .stat-val {
+            font-family: var(--font-mono);
+            font-size: clamp(20px, 3vw, 28px);
+            font-weight: 800;
+        }
+        .stat-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Cuadrícula de 10 casos clínicos */
+        .missions-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+        }
+
+        .mission-card {
+            background: var(--bg-card);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 14px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            cursor: pointer;
+            transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+            min-height: 165px;
+        }
+        .mission-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--emerald-bright);
+            box-shadow: 0 10px 24px rgba(16, 185, 129, 0.18);
+        }
+        .mission-card.completed {
+            border-color: rgba(52, 211, 153, 0.7);
+            background: rgba(10, 34, 42, 0.88);
+        }
+
+        .mission-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .mission-num {
+            font-family: var(--font-mono);
+            font-size: 18px;
+            font-weight: 900;
+            color: var(--cyan);
+        }
+        .mission-budget {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 6px;
+            background: rgba(6, 13, 24, 0.85);
+            color: var(--emerald-bright);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+        }
+        .mission-patient {
+            font-size: 14px;
+            font-weight: 800;
+            color: #ffffff;
+        }
+        .mission-diag {
+            font-size: 12px;
+            color: #cbd5e1;
+            margin-top: 3px;
+            line-height: 1.3;
+        }
+        .mission-concept {
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            color: var(--cyan);
+            margin-top: 8px;
+            line-height: 1.3;
+        }
+        .mission-footer {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(148, 163, 184, 0.16);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            font-weight: 800;
+        }
+
+        .hub-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 14px;
+            margin-top: 4px;
+        }
+
+        .pill-badge {
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--emerald-bright);
+            border: 1px solid rgba(16, 185, 129, 0.45);
+        }
+
+        /* =========================================================
+           5. ÁRBOL DE HABILIDADES (Z-INDEX 35)
+           ========================================================= */
+        #screen-skills {
+            position: fixed;
+            inset: 0;
+            z-index: 35;
+            background: radial-gradient(circle at 50% 8%, #0e2845 0%, #060b14 78%);
+            overflow-y: auto;
+            padding: 24px 16px;
+        }
+
+        .skills-container {
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        .skills-header {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .skills-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 14px;
+        }
+
+        .skill-card {
+            background: var(--bg-card);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            border-radius: 14px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .skill-card.unlocked {
+            border-color: var(--emerald);
+            background: rgba(10, 36, 44, 0.88);
+        }
+        .skill-card:hover { transform: translateY(-2px); border-color: var(--cyan); }
+
+        /* =========================================================
+           6. MODALES (FICHA CLÍNICA Y CIRUGÍA COMPLETADA — Z-INDEX 40)
+           ========================================================= */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 40;
+            background: rgba(4, 9, 18, 0.78);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .modal-card {
+            width: 100%;
+            max-width: 560px;
+            max-height: 92vh;
+            overflow-y: auto;
+            padding: 22px;
+            border-left: 4px solid var(--emerald-bright);
+        }
+
+        .briefing-top {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .tag-emerald {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 9px;
+            border-radius: 6px;
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--emerald-bright);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+
+        .quote-box {
+            background: rgba(6, 13, 24, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-size: 13px;
+            font-style: italic;
+            color: #fde68a;
+            margin: 12px 0;
+            line-height: 1.45;
+        }
+
+        .coords-strip {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            background: var(--bg-input);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 10px;
+            padding: 10px;
+            margin: 12px 0;
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 12px;
+        }
+
+        .alert-obstacle {
+            background: rgba(136, 19, 55, 0.35);
+            border: 1px solid rgba(244, 63, 94, 0.5);
+            color: #fecdd3;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+            margin-bottom: 12px;
+        }
+
+        .implicit-box {
+            border-top: 1px solid rgba(148, 163, 184, 0.22);
+            padding-top: 12px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--cyan);
+            line-height: 1.5;
+        }
+
+        /* =========================================================
+           7. HUD DEL QUIRÓFANO 3D (Z-INDEX 20)
+           ========================================================= */
+        #hud-3d {
+            position: fixed;
+            inset: 0;
+            z-index: 20;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 12px;
+            gap: 10px;
+        }
+
+        .hud-top {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            width: 100%;
+        }
+
+        /* Menú desplegable superior izquierdo */
+        .guide-dropdown {
+            pointer-events: auto;
+            width: 100%;
+            max-width: 380px;
+            border-left: 4px solid var(--emerald-bright);
+            overflow: hidden;
+        }
+
+        .guide-toggle-btn {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            text-align: left;
+        }
+        .guide-toggle-btn:hover { background: rgba(56, 189, 248, 0.08); }
+
+        .guide-body {
+            padding: 0 14px 14px;
+            border-top: 1px solid rgba(148, 163, 184, 0.18);
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        /* Controles de cámara y navegación superiores */
+        .hud-controls {
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .btn-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: flex-end;
+        }
+
+        .cam-group {
+            display: inline-flex;
+            background: rgba(6, 13, 24, 0.92);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            border-radius: 10px;
+            padding: 3px;
+            gap: 3px;
+        }
+        .cam-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 5px 10px;
+            border-radius: 7px;
+            cursor: pointer;
+        }
+        .cam-btn.active, .cam-btn:hover {
+            background: rgba(16, 185, 129, 0.25);
+            color: var(--emerald-bright);
+        }
+
+        /* Fila inferior: Telemetría (izq) + Consola de Vectores (der) */
+        .hud-bottom {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 12px;
+            width: 100%;
+        }
+
+        .telemetry-panel {
+            pointer-events: auto;
+            width: 280px;
+            padding: 14px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+
+        .tel-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .console-panel {
+            pointer-events: auto;
+            width: 100%;
+            max-width: 440px;
+            padding: 14px 16px;
+        }
+
+        .console-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .inputs-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .axis-box label {
+            display: block;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .stepper {
+            display: flex;
+            align-items: center;
+            background: var(--bg-input);
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .stepper:focus-within { border-color: var(--cyan-bright); }
+
+        .stepper button {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 16px;
+            font-weight: 700;
+            padding: 7px 9px;
+            cursor: pointer;
+        }
+        .stepper button:hover { background: rgba(56, 189, 248, 0.15); color: #fff; }
+
+        .stepper input {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: #fff;
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 15px;
+            font-weight: 700;
+            outline: none;
+            padding: 6px 0;
+            -moz-appearance: textfield;
+        }
+        .stepper input::-webkit-outer-spin-button,
+        .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+        .calc-bar {
+            background: var(--bg-input);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 6px;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+        }
+
+        /* Toast flotante de alertas */
+        #hud-toast {
+            position: fixed;
+            top: 22%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 38;
+            width: min(92vw, 440px);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+        #hud-toast.visible { opacity: 1; }
+        .toast-inner {
+            padding: 16px 18px;
+            text-align: center;
+            border-width: 2px;
+        }
+
+        /* =========================================================
+           8. RESPONSIVIDAD (TABLETS Y CELULARES)
+           ========================================================= */
+        @media (max-width: 1024px) {
+            .missions-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .missions-grid { grid-template-columns: repeat(2, 1fr); }
+            .skills-grid { grid-template-columns: 1fr; }
+
+            #hud-3d { padding: 8px; gap: 6px; }
+            .guide-dropdown { max-width: 100%; }
+            .hud-controls { width: 100%; align-items: stretch; }
+            .btn-row { justify-content: space-between; }
+            .cam-group { justify-content: center; }
+
+            .hud-bottom {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 6px;
+            }
+            .telemetry-panel {
+                width: 100%;
+                padding: 8px 12px;
+                flex-direction: row;
+                flex-wrap: wrap;
+                justify-content: space-between;
+                font-size: 11px;
+            }
+            .telemetry-panel .tel-title { display: none; }
+            .console-panel { max-width: 100%; padding: 10px 12px; }
+            .stepper button { padding: 5px 7px; }
+            .stepper input { font-size: 14px; }
+        }
+
+        @media (max-width: 480px) {
+            .missions-grid { grid-template-columns: 1fr; }
+            .coords-strip { grid-template-columns: 1fr; text-align: left; }
+        }
     </style>
 </head>
 <body>
 
-    <!-- ========================================================= -->
-    <!-- 1. CONTENEDOR WEBGL 3D (QUIRÓFANO Y BRAZO DA VINCI)       -->
-    <!-- ========================================================= -->
+    <!-- 1. LIENZO 3D FIJO -->
     <div id="canvas-container"></div>
-    <div id="collision-overlay" class="fixed inset-0 pointer-events-none z-[15]"></div>
+    <div id="collision-flash-layer"></div>
 
-    <!-- Etiquetas 3D proyectadas a pantalla -->
-    <div id="labels-layer" class="fixed inset-0 pointer-events-none overflow-hidden z-[5]">
-        <div id="label-pi" class="world-label bg-slate-950/90 text-cyan-300 border border-cyan-500/50 px-2 py-0.5 rounded text-[11px] font-mono-code shadow-md">
-            Pinza Pᵢ (0, 0, 0)
-        </div>
-        <div id="label-pf" class="world-label bg-slate-950/90 text-emerald-300 border border-emerald-500/60 px-2.5 py-1 rounded-md text-xs font-mono-code font-bold shadow-lg">
-            🎯 OBJETIVO Pᶠ
-        </div>
-        <div id="label-preview" class="world-label bg-amber-950/90 text-amber-300 border border-amber-400/60 px-2 py-0.5 rounded text-[11px] font-mono-code hidden">
-            Proyección
-        </div>
+    <!-- Etiquetas 3D -->
+    <div id="labels-layer">
+        <div id="label-pi" class="world-label hidden">Pinza Pᵢ</div>
+        <div id="label-pf" class="world-label hidden">🎯 Pᶠ</div>
+        <div id="label-preview" class="world-label hidden">Proyección</div>
     </div>
 
-    <!-- ========================================================= -->
-    <!-- 2. HUB DE MISIONES (PANTALLA PRINCIPAL)                   -->
-    <!-- ========================================================= -->
-    <div id="screen-hub" class="fixed inset-0 z-30 hub-bg overflow-y-auto flex flex-col items-center justify-between py-5 px-4 md:px-8">
-        
-        <!-- Barra Superior -->
-        <div class="w-full max-w-7xl flex flex-wrap justify-between items-center gap-2 mb-2">
-            <div class="flex items-center gap-2 bg-slate-900/85 border border-teal-500/35 px-3.5 py-1.5 rounded-full text-xs text-slate-300">
-                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span><strong>Simulador Quirúrgico Da Vinci:</strong> Aprendizaje Implícito de Cálculo Vectorial</span>
-            </div>
-            <div class="flex items-center gap-3">
-                <button id="btn-open-pedagogy" class="px-3.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 border border-cyan-500/40 text-cyan-300 text-xs font-semibold transition">
-                    💡 Pedagogía Implícita
+    <!-- =========================================================
+         2. MENÚ PRINCIPAL (HUB DE MISIONES)
+         ========================================================= -->
+    <div id="screen-hub">
+        <div class="hub-container">
+            <header class="hub-header">
+                <h1 class="hub-title">NEURO<span>VECTOR</span></h1>
+                <p class="hub-subtitle">Sistema de control vectorial para brazo robótico de rehabilitación</p>
+            </header>
+
+            <!-- 4 Indicadores Superiores -->
+            <section class="stats-grid">
+                <div class="stat-card">
+                    <div id="stat-score" class="stat-val" style="color: var(--emerald-bright);">0</div>
+                    <div class="stat-label">Puntuación total</div>
+                </div>
+                <div class="stat-card">
+                    <div id="stat-completed" class="stat-val" style="color: var(--cyan);">0/10</div>
+                    <div class="stat-label">Cirugías completadas</div>
+                </div>
+                <div class="stat-card">
+                    <div id="stat-points" class="stat-val" style="color: var(--amber);">1</div>
+                    <div class="stat-label">Puntos de habilidad</div>
+                </div>
+                <div class="stat-card">
+                    <div id="stat-collisions" class="stat-val" style="color: var(--rose);">0</div>
+                    <div class="stat-label">Colisiones / Reinicios</div>
+                </div>
+            </section>
+
+            <!-- 10 Tarjetas Interactivas de Casos Clínicos -->
+            <section id="missions-grid" class="missions-grid"></section>
+
+            <!-- Botones Inferiores -->
+            <footer class="hub-actions">
+                <button id="btn-open-skills" class="btn btn-secondary">
+                    🧬 Árbol de Habilidades <span id="hub-pts-badge" class="pill-badge">1 pt</span>
                 </button>
-                <label class="flex items-center gap-2 cursor-pointer bg-slate-900/90 border border-amber-500/40 px-3.5 py-1.5 rounded-lg text-xs text-amber-300 hover:border-amber-400 transition">
-                    <input type="checkbox" id="toggle-demo-mode" class="accent-emerald-400 w-3.5 h-3.5 cursor-pointer">
-                    <span>Modo Demo / Desbloquear Todo</span>
-                </label>
-            </div>
-        </div>
-
-        <!-- Título y 4 Tarjetas de Telemetría Global -->
-        <div class="text-center my-2 w-full max-w-5xl">
-            <h1 class="text-4xl sm:text-5xl md:text-6xl font-black tracking-wider title-glow">
-                <span class="text-white">NEURO</span><span class="text-emerald-400">VECTOR</span>
-            </h1>
-            <p class="text-slate-300 text-xs sm:text-sm md:text-base mt-1.5 tracking-wide">
-                Sistema de control vectorial para brazo robótico de rehabilitación
-            </p>
-
-            <!-- 4 Tarjetas Superiores -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-5">
-                <div class="card-surgical px-4 py-3 rounded-xl text-center">
-                    <div id="hub-score" class="text-2xl sm:text-3xl font-extrabold text-emerald-400 font-mono-code">0</div>
-                    <div class="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">Puntuación total</div>
-                </div>
-                <div class="card-surgical px-4 py-3 rounded-xl text-center">
-                    <div id="hub-completed" class="text-2xl sm:text-3xl font-extrabold text-cyan-400 font-mono-code">0/10</div>
-                    <div class="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">Cirugías completadas</div>
-                </div>
-                <div class="card-surgical px-4 py-3 rounded-xl text-center">
-                    <div id="hub-skill-points" class="text-2xl sm:text-3xl font-extrabold text-amber-400 font-mono-code">1</div>
-                    <div class="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">Puntos de habilidad disponibles</div>
-                </div>
-                <div class="card-surgical px-4 py-3 rounded-xl text-center border-rose-500/30">
-                    <div id="hub-collisions" class="text-2xl sm:text-3xl font-extrabold text-rose-400 font-mono-code">0</div>
-                    <div class="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wider">Colisiones / Reinicios</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Cuadrícula Interactiva de 10 Casos Clínicos Progresivos -->
-        <div id="missions-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 w-full max-w-7xl my-4">
-            <!-- Renderizado dinámicamente -->
-        </div>
-
-        <!-- Botones Inferiores Interactivos -->
-        <div class="flex flex-wrap justify-center items-center gap-4 mt-2 pb-2">
-            <button id="btn-open-skills-hub" class="px-7 py-3 rounded-xl bg-slate-800/95 hover:bg-slate-700 text-white font-bold border border-emerald-400/50 shadow-lg hover:border-emerald-300 transition flex items-center gap-2 text-sm">
-                <span>🧬</span> Árbol de Habilidades
-                <span id="badge-skill-pts" class="ml-1 px-2.5 py-0.5 text-xs rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 font-mono-code">1 pt</span>
-            </button>
-            <button id="btn-free-practice" class="px-7 py-3 rounded-xl btn-primary-gradient text-sm flex items-center gap-2">
-                <span>🦾</span> Quirófano de Práctica Libre
-            </button>
+                <button id="btn-free-mode" class="btn btn-primary">
+                    🦾 Quirófano de Práctica Libre
+                </button>
+            </footer>
         </div>
     </div>
 
-    <!-- ========================================================= -->
-    <!-- 3. ÁRBOL DE HABILIDADES INTERACTIVO (8 NODOS)             -->
-    <!-- ========================================================= -->
-    <div id="screen-skills" class="fixed inset-0 z-40 hub-bg hidden overflow-y-auto flex-col items-center py-8 px-4 md:px-10">
-        <div class="w-full max-w-5xl">
-            <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+    <!-- =========================================================
+         3. ÁRBOL DE HABILIDADES INTERACTIVO
+         ========================================================= -->
+    <div id="screen-skills" class="hidden">
+        <div class="skills-container">
+            <div class="skills-header">
                 <div>
-                    <h2 class="text-3xl md:text-4xl font-extrabold text-white tracking-wide text-center sm:text-left">Árbol de Habilidades</h2>
-                    <p class="text-slate-400 text-xs sm:text-sm mt-1 text-center sm:text-left">
-                        Invierte tus puntos de cirugía para desbloquear capacidades vectoriales y cinemáticas del brazo Da Vinci.
+                    <h2 style="font-size: 28px; font-weight: 900; color: #fff;">Árbol de Habilidades</h2>
+                    <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
+                        Invierte tus puntos de cirugía para desbloquear capacidades vectoriales del brazo Da Vinci.
                     </p>
                 </div>
-                <div class="flex flex-wrap items-center justify-center gap-3">
-                    <button id="btn-unlock-all-skills" class="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 text-xs font-bold transition">
-                        🔓 Desbloquear Todo (Demo)
-                    </button>
-                    <div class="px-4 py-2 rounded-xl bg-slate-900/90 border border-emerald-500/40 text-emerald-300 font-semibold text-sm">
-                        Disponibles: <span id="skills-available-pts" class="font-mono-code font-bold text-lg">1</span>
-                    </div>
-                    <button id="btn-close-skills" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold text-sm transition">
-                        ← Volver
-                    </button>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span class="pill-badge" style="font-size: 13px; padding: 6px 12px;">
+                        Disponibles: <strong id="skills-pts-val">1</strong> pt(s)
+                    </span>
+                    <button id="btn-close-skills" class="btn btn-ghost btn-sm">← Volver al Hub</button>
                 </div>
             </div>
-
-            <div id="skills-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-                <!-- Generado dinámicamente -->
-            </div>
+            <div id="skills-grid" class="skills-grid"></div>
         </div>
     </div>
 
-    <!-- ========================================================= -->
-    <!-- 4. MODAL DE PEDAGOGÍA IMPLÍCITA                           -->
-    <!-- ========================================================= -->
-    <div id="modal-pedagogy" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-4">
-        <div class="glass-panel max-w-2xl w-full rounded-2xl p-6 md:p-7 border border-teal-400/50 text-slate-200 space-y-4">
-            <div class="flex justify-between items-center border-b border-slate-700 pb-3">
-                <h3 class="text-xl font-extrabold text-emerald-400 flex items-center gap-2">
-                    <span>🧠</span> Aprendizaje Implícito en NEUROVECTOR
-                </h3>
-                <button id="btn-close-pedagogy" class="text-slate-400 hover:text-white text-xl font-bold px-2">✕</button>
+    <!-- =========================================================
+         4. FICHA CLÍNICA INICIAL (MODAL CENTRADO)
+         ========================================================= -->
+    <div id="modal-briefing" class="modal-backdrop hidden">
+        <div class="panel modal-card">
+            <div class="briefing-top">
+                <span id="brief-badge" class="tag-emerald">PACIENTE #1</span>
+                <span id="brief-concept" class="mono" style="font-size: 12px; color: var(--cyan); font-weight: 700;"></span>
             </div>
-            <div class="space-y-3 text-xs sm:text-sm leading-relaxed text-slate-300">
-                <div class="p-3.5 rounded-xl bg-slate-900/85 border-l-4 border-cyan-400">
-                    <strong class="text-cyan-300 block mb-1">1. ¿Qué es un vector?</strong>
-                    Al modificar <code class="text-emerald-300">X, Y, Z</code> en la Consola Da Vinci, se proyecta una flecha holográfica desde la pinza con sus proyecciones ortogonales (<span class="text-rose-400">ΔX</span>, <span class="text-sky-400">ΔY</span>, <span class="text-emerald-400">ΔZ</span>), magnitud <code class="text-amber-300">|V|</code> y ángulo <code class="text-amber-300">θxy</code>. Descubres visualmente que un vector representa un desplazamiento con magnitud, dirección y sentido.
+            <h2 id="brief-title" style="font-size: 20px; font-weight: 800; color: #fff; line-height: 1.3;"></h2>
+            <div id="brief-quote" class="quote-box"></div>
+            <p id="brief-goal" style="font-size: 13.5px; color: #e2e8f0; line-height: 1.45;"></p>
+
+            <div class="coords-strip">
+                <div>
+                    <div style="font-size: 10px; color: var(--text-muted);">Inicio Pᵢ</div>
+                    <div id="brief-pi" style="color: var(--cyan-bright); font-weight: 800; margin-top: 2px;"></div>
                 </div>
-                <div class="p-3.5 rounded-xl bg-slate-900/85 border-l-4 border-emerald-400">
-                    <strong class="text-emerald-300 block mb-1">2. ¿Cómo se usa?</strong>
-                    Para llevar la pinza desde <code class="text-cyan-300">Pᵢ</code> hasta <code class="text-emerald-300">Pᶠ</code> calculas la diferencia de coordenadas <code class="text-amber-300">d = Pᶠ - Pᵢ</code>. Si hay un obstáculo quirúrgico, encadenas varios vectores consecutivos (<code class="text-amber-300">d₁ + d₂</code>).
+                <div>
+                    <div style="font-size: 10px; color: var(--text-muted);">Objetivo Pᶠ</div>
+                    <div id="brief-pf" style="color: var(--emerald-bright); font-weight: 800; margin-top: 2px;"></div>
                 </div>
-                <div class="p-3.5 rounded-xl bg-slate-900/85 border-l-4 border-amber-400">
-                    <strong class="text-amber-300 block mb-1">3. ¿Cuándo se usa?</strong>
-                    En robótica quirúrgica y rehabilitación del miembro superior para posicionar actuadores con precisión milimétrica, sortear equipos médicos en 3D y optimizar el gasto energético del recorrido.
+                <div>
+                    <div style="font-size: 10px; color: var(--text-muted);">Límite</div>
+                    <div id="brief-limit" style="color: var(--amber); font-weight: 800; margin-top: 2px;"></div>
                 </div>
             </div>
-            <div class="flex justify-end pt-1">
-                <button id="btn-ok-pedagogy" class="px-6 py-2.5 rounded-xl btn-primary-gradient text-sm">
-                    Continuar al Simulador
+
+            <div id="brief-obstacle" class="alert-obstacle hidden"></div>
+
+            <div id="brief-implicit" class="implicit-box"></div>
+
+            <div style="margin-top: 18px; display: flex; justify-content: flex-end;">
+                <button id="btn-start-level" class="btn btn-primary" style="width: 100%;">
+                    ▶ Iniciar Reto
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- ========================================================= -->
-    <!-- 5. FICHA CLÍNICA INICIAL (CENTRADA ANTES DE INICIAR RETO) -->
-    <!-- ========================================================= -->
-    <div id="modal-briefing" class="fixed inset-0 z-40 bg-slate-950/75 backdrop-blur-md hidden items-center justify-center p-4">
-        <div class="glass-panel max-w-xl w-full rounded-2xl p-6 sm:p-7 border-l-4 border-l-emerald-400 shadow-2xl">
-            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <span id="briefing-badge" class="text-xs font-mono-code uppercase tracking-wider px-3 py-1 rounded-md bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                    PACIENTE #1 • CIRUGÍA
-                </span>
-                <span id="briefing-concept" class="text-xs font-mono-code text-cyan-300 font-semibold">
-                    Desplazamiento Lineal 1D
-                </span>
-            </div>
-
-            <h2 id="briefing-title" class="text-xl sm:text-2xl font-extrabold text-white leading-snug">
-                Ana Torres — Rehabilitación de hombro
-            </h2>
-
-            <p id="briefing-quote" class="text-xs sm:text-sm text-amber-200/95 italic mt-3 bg-slate-900/85 px-3.5 py-2.5 rounded-xl border border-slate-700/90 leading-relaxed">
-                🧠 Motivo médico: "Tras la cirugía de hombro, necesito extender lateralmente la extremidad."
-            </p>
-
-            <div class="mt-3.5 text-xs sm:text-sm text-slate-200 flex items-start gap-2.5 leading-relaxed">
-                <span class="text-base leading-none mt-0.5">🎯</span>
-                <span id="briefing-goal">Lleva la pinza Da Vinci hasta el punto objetivo.</span>
-            </div>
-
-            <!-- Coordenadas, Presupuesto de Vectores y Alerta de Obstáculos -->
-            <div class="mt-3.5 grid grid-cols-3 gap-2 bg-slate-950/80 p-3 rounded-xl border border-slate-800 font-mono-code text-xs">
-                <div class="text-center">
-                    <div class="text-[10px] text-slate-400">Inicio Pᵢ</div>
-                    <div id="briefing-pi" class="text-cyan-300 font-bold mt-0.5">(0, 0, 0)</div>
-                </div>
-                <div class="text-center border-x border-slate-800">
-                    <div class="text-[10px] text-slate-400">Objetivo Pᶠ</div>
-                    <div id="briefing-pf" class="text-emerald-400 font-bold mt-0.5">(5, 0, 0)</div>
-                </div>
-                <div class="text-center">
-                    <div class="text-[10px] text-slate-400">Presupuesto</div>
-                    <div id="briefing-budget" class="text-amber-300 font-bold mt-0.5">1 vector máx.</div>
-                </div>
-            </div>
-
-            <div id="briefing-obstacle-alert" class="mt-2.5 px-3 py-2 rounded-lg bg-rose-950/50 border border-rose-500/40 text-rose-200 text-xs font-mono-code hidden">
-                ⚠️ Alerta de Obstáculos: Ninguno en trayectoria directa.
-            </div>
-
-            <!-- Guía Implícita -->
-            <div id="briefing-implicit" class="mt-3.5 pt-3 border-t border-slate-700/80 text-xs sm:text-[13px] text-cyan-300 font-mono-code leading-relaxed">
-                💡 <strong>Guía Implícita:</strong> Observa la diferencia entre Pᶠ y Pᵢ.
-            </div>
-
-            <div class="mt-5 pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <span class="text-[11px] text-slate-400 italic">
-                    Podrás releer esta guía en la pestaña superior izquierda (📋 Guía ▼).
-                </span>
-                <button id="btn-start-challenge" class="w-full sm:w-auto px-7 py-3 rounded-xl btn-primary-gradient text-sm tracking-wide flex items-center justify-center gap-2">
-                    <span>▶</span> Iniciar Reto
-                </button>
+    <!-- =========================================================
+         5. MODAL DE CIRUGÍA COMPLETADA
+         ========================================================= -->
+    <div id="modal-complete" class="modal-backdrop hidden">
+        <div class="panel modal-card" style="text-align: center; border-left: none; border: 2px solid var(--emerald-bright);">
+            <div style="font-size: 40px; margin-bottom: 6px;">🎯</div>
+            <h2 id="comp-title" style="font-size: 22px; font-weight: 900; color: var(--emerald-bright);">¡Cirugía Completada!</h2>
+            <p id="comp-desc" style="font-size: 13.5px; color: var(--text-main); margin: 10px 0 14px; line-height: 1.5;"></p>
+            <div id="comp-rewards" class="mono" style="background: var(--bg-input); padding: 10px; border-radius: 10px; color: var(--amber); font-weight: 700; font-size: 13px; margin-bottom: 18px;"></div>
+            <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;">
+                <button id="btn-comp-next" class="btn btn-primary">Siguiente Paciente →</button>
+                <button id="btn-comp-hub" class="btn btn-ghost">Volver al Hub</button>
             </div>
         </div>
     </div>
 
-    <!-- ========================================================= -->
-    <!-- 6. HUD DEL QUIRÓFANO 3D                                   -->
-    <!-- ========================================================= -->
-    <div id="hud-3d" class="fixed inset-0 z-20 pointer-events-none hidden flex-col justify-between p-3 sm:p-4">
-        
+    <!-- =========================================================
+         6. HUD DEL QUIRÓFANO 3D
+         ========================================================= -->
+    <div id="hud-3d" class="hidden">
         <!-- Fila Superior -->
-        <div class="flex flex-wrap justify-between items-start gap-2.5 w-full">
-            
-            <!-- Pestaña Desplegable Superior Izquierda (📋 Guía ▼) -->
-            <div class="glass-panel rounded-2xl max-w-sm sm:max-w-md w-full pointer-events-auto border-l-4 border-l-emerald-400 overflow-hidden">
-                <button id="btn-toggle-guide" type="button" class="w-full p-3 sm:px-4 flex items-center justify-between gap-2 text-left hover:bg-slate-800/40 transition">
-                    <div class="min-w-0">
-                        <div class="flex items-center gap-2">
-                            <span id="hud-badge" class="text-[10px] font-mono-code uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
-                                PACIENTE #1
-                            </span>
-                            <span id="hud-concept" class="text-[11px] text-cyan-300 font-mono-code truncate hidden sm:inline">
-                                Vector 1D
-                            </span>
+        <div class="hud-top">
+            <!-- Menú Desplegable Superior Izquierdo -->
+            <div class="panel guide-dropdown">
+                <button id="btn-guide-toggle" class="guide-toggle-btn" type="button">
+                    <div style="min-width: 0;">
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span id="hud-badge" class="tag-emerald" style="font-size: 10px; padding: 2px 6px;">PACIENTE #1</span>
+                            <span id="hud-concept" class="mono" style="font-size: 11px; color: var(--cyan); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
                         </div>
-                        <h2 id="hud-title" class="text-sm sm:text-base font-extrabold text-white truncate mt-1">
-                            Ana Torres — Rehabilitación de hombro
-                        </h2>
+                        <div id="hud-title" style="font-size: 13.5px; font-weight: 800; color: #fff; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>
                     </div>
-                    <span class="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800/95 border border-cyan-500/40 text-cyan-300 text-[11px] font-mono-code font-bold flex items-center gap-1">
-                        <span>📋 Guía</span>
-                        <span id="hud-guide-arrow">▼</span>
+                    <span class="mono" style="flex-shrink: 0; font-size: 11px; color: var(--cyan); background: rgba(6,13,24,0.85); padding: 4px 8px; border-radius: 8px; border: 1px solid rgba(56,189,248,0.4);">
+                        📋 Guía <span id="guide-arrow">▼</span>
                     </span>
                 </button>
-
-                <!-- Contenido Desplegable -->
-                <div id="hud-guide-body" class="hidden px-4 pb-4 border-t border-slate-800 space-y-2.5 text-xs">
-                    <p id="hud-quote" class="text-amber-200/90 italic mt-2.5 bg-slate-900/75 px-2.5 py-1.5 rounded-lg border border-slate-700/80"></p>
-                    <p id="hud-goal" class="text-slate-200"></p>
-                    <div id="hud-implicit-hint" class="pt-2 border-t border-slate-700/70 text-[11px] text-cyan-300 font-mono-code leading-relaxed"></div>
-                    <div class="pt-1 flex justify-between items-center">
-                        <button id="btn-reopen-modal" type="button" class="text-[11px] text-emerald-300 hover:text-emerald-200 underline font-semibold">
-                            🔍 Abrir ficha centrada
-                        </button>
-                        <button id="btn-hide-guide" type="button" class="text-[11px] text-slate-400 hover:text-white font-mono-code">
-                            Plegar ▲
-                        </button>
-                    </div>
+                <div id="guide-body" class="guide-body hidden">
+                    <div id="hud-quote" class="quote-box" style="margin: 8px 0; font-size: 11.5px;"></div>
+                    <p id="hud-goal" style="color: #e2e8f0; margin-bottom: 8px;"></p>
+                    <div id="hud-implicit" class="implicit-box" style="padding-top: 8px; font-size: 11.5px;"></div>
                 </div>
             </div>
 
-            <!-- Controles Centrales Superiores: Navegación y Selectores de Cámara -->
-            <div class="flex flex-col items-center gap-2 pointer-events-auto mx-auto sm:mx-0">
-                <div class="flex items-center gap-2">
-                    <button id="btn-exit-hub" class="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/40 font-semibold text-xs transition">
-                        ← Salir al Hub
-                    </button>
-                    <button id="btn-restart-level" class="px-3.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-600 font-semibold text-xs transition">
-                        ↺ Reiniciar Nivel
-                    </button>
-                    <button id="btn-hud-skills" class="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-amber-400/50 text-amber-300 text-xs font-bold transition" title="Árbol de Habilidades">
-                        🧬 Habilidades
-                    </button>
+            <!-- Controles de Cámara y Navegación -->
+            <div class="hud-controls">
+                <div class="btn-row">
+                    <button id="btn-exit-hub" class="btn btn-danger btn-sm">← Salir al Hub</button>
+                    <button id="btn-restart" class="btn btn-ghost btn-sm">↺ Reiniciar</button>
                 </div>
-                <!-- Selectores Rápidos de Cámara -->
-                <div class="flex bg-slate-900/95 p-1 rounded-xl border border-slate-700 text-[11px] font-mono-code shadow-lg">
-                    <button id="cam-3d" class="px-3 py-1 rounded-lg bg-teal-500/25 text-teal-300 font-bold hover:bg-teal-500/35 transition">Vista 3D</button>
-                    <button id="cam-xy" class="px-3 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition">Plano XY</button>
-                    <button id="cam-xz" class="px-3 py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition">Lateral XZ</button>
-                </div>
-            </div>
-
-            <!-- Indicador Superior Derecho de Estado Quirúrgico -->
-            <div class="glass-panel rounded-2xl px-4 py-2.5 pointer-events-auto hidden lg:flex items-center gap-4 text-xs font-mono-code">
-                <div>
-                    <div class="text-slate-400 text-[10px]">ESTADO DE RUTA</div>
-                    <div id="hud-route-status" class="text-emerald-400 font-bold">DESPEJADA</div>
-                </div>
-                <div class="h-7 w-[1px] bg-slate-700"></div>
-                <div>
-                    <div class="text-slate-400 text-[10px]">PINZA ENDOWRIST</div>
-                    <div id="hud-gripper-status" class="text-cyan-300 font-bold">ACTIVA</div>
+                <div class="cam-group">
+                    <button id="cam-3d" class="cam-btn active">3D</button>
+                    <button id="cam-xy" class="cam-btn">Plano XY</button>
+                    <button id="cam-xz" class="cam-btn">Lateral XZ</button>
                 </div>
             </div>
         </div>
 
-        <!-- Notificación Central Flotante (Éxito / Colisión / Reinicio) -->
-        <div id="hud-toast" class="fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 pointer-events-none opacity-0 transition-all duration-300 max-w-md w-[92%]">
-            <div id="hud-toast-box" class="glass-panel p-5 rounded-2xl border-2 border-emerald-400 text-center shadow-2xl">
-                <div id="hud-toast-title" class="text-lg font-extrabold text-emerald-300 mb-1"></div>
-                <div id="hud-toast-body" class="text-xs sm:text-sm text-slate-200 leading-relaxed"></div>
-                <div id="hud-toast-actions" class="mt-4 flex justify-center gap-3 pointer-events-auto hidden">
-                    <button id="btn-next-mission" class="px-5 py-2 rounded-xl btn-primary-gradient text-xs">
-                        Siguiente Paciente →
-                    </button>
-                    <button id="btn-back-hub-toast" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-xs font-semibold">
-                        Volver al Hub
-                    </button>
-                </div>
+        <!-- Toast Flotante -->
+        <div id="hud-toast">
+            <div id="toast-box" class="panel toast-inner">
+                <div id="toast-title" style="font-size: 15px; font-weight: 800; margin-bottom: 4px;"></div>
+                <div id="toast-msg" style="font-size: 12.5px; color: #e2e8f0; line-height: 1.4;"></div>
             </div>
         </div>
 
-        <!-- Fila Inferior: Telemetría Quirúrgica (Izquierda) y Consola de Vectores Da Vinci (Derecha) -->
-        <div class="flex flex-col md:flex-row justify-between items-stretch md:items-end gap-3 w-full">
-            
-            <!-- Panel Inferior Izquierdo: Telemetría Quirúrgica -->
-            <div class="glass-panel rounded-2xl p-3.5 sm:p-4 pointer-events-auto w-full md:w-80 font-mono-code text-xs space-y-2">
-                <div class="flex justify-between items-center border-b border-slate-700/80 pb-1.5">
-                    <span class="text-[11px] text-emerald-400 font-extrabold uppercase tracking-wider">Telemetría Quirúrgica</span>
-                    <button id="btn-toggle-guides" class="text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 transition">
-                        ΔX,ΔY,ΔZ: ON
-                    </button>
+        <!-- Fila Inferior -->
+        <div class="hud-bottom">
+            <!-- Telemetría Quirúrgica (Izquierda) -->
+            <div class="panel telemetry-panel">
+                <div class="tel-title" style="color: var(--emerald-bright); font-weight: 800; border-bottom: 1px solid rgba(148,163,184,0.2); padding-bottom: 5px; margin-bottom: 2px;">
+                    TELEMETRÍA QUIRÚRGICA
                 </div>
-                <div class="flex justify-between items-center">
-                    <span class="text-slate-400">Pᵢ actual:</span>
-                    <span id="tel-pi" class="text-cyan-300 font-bold">(0.0, 0.0, 0.0)</span>
+                <div class="tel-row">
+                    <span style="color: var(--text-muted);">Pᵢ actual:</span>
+                    <strong id="tel-pi" style="color: var(--cyan-bright);">(0.0, 0.0, 0.0)</strong>
                 </div>
-                <div class="flex justify-between items-center">
-                    <span class="text-slate-400">Pᶠ objetivo:</span>
-                    <span id="tel-pf" class="text-emerald-400 font-bold">(5.0, 0.0, 0.0)</span>
+                <div class="tel-row">
+                    <span style="color: var(--text-muted);">Pᶠ objetivo:</span>
+                    <strong id="tel-pf" style="color: var(--emerald-bright);">(5.0, 0.0, 0.0)</strong>
                 </div>
-                <div class="flex justify-between items-center">
-                    <span class="text-slate-400">Distancia restante:</span>
-                    <span id="tel-dist" class="text-white font-bold">5.00 u</span>
-                </div>
-                <div class="flex justify-between items-center">
-                    <span class="text-slate-400">Vectores restantes:</span>
-                    <span id="tel-vectors-left" class="text-amber-300 font-bold">1 / 1</span>
-                </div>
-                <div class="pt-1 border-t border-slate-800 flex justify-between items-center">
-                    <span class="text-slate-400">Energía acumulada:</span>
-                    <span id="tel-energy" class="text-sky-300 font-bold">0.00 kJ</span>
+                <div class="tel-row">
+                    <span style="color: var(--text-muted);">Distancia:</span>
+                    <strong id="tel-dist" style="color: #fff;">5.00 u</strong>
                 </div>
             </div>
 
-            <!-- Panel Inferior Derecho: Consola de Vectores Da Vinci -->
-            <div class="glass-panel rounded-2xl p-4 sm:p-5 pointer-events-auto w-full md:w-[465px]">
-                <div class="flex justify-between items-center mb-3">
-                    <span class="text-xs font-extrabold tracking-wider text-white uppercase">
-                        Consola de Vectores Da Vinci
+            <!-- Consola de Vectores Da Vinci (Derecha) -->
+            <div class="panel console-panel">
+                <div class="console-header">
+                    <span style="font-size: 12px; font-weight: 800; letter-spacing: 0.5px; color: #fff;">
+                        CONSOLA DE VECTORES DA VINCI
                     </span>
-                    <span id="console-collision-tag" class="text-[10px] font-mono-code uppercase px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-400/30">
-                        TRAYECTORIA SEGURA
+                    <span id="console-status" class="mono" style="font-size: 10px; padding: 3px 8px; border-radius: 6px; background: rgba(16,185,129,0.18); color: var(--emerald-bright); border: 1px solid rgba(16,185,129,0.4);">
+                        EN ESPERA
                     </span>
                 </div>
 
-                <!-- Inputs Numéricos X, Y, Z -->
-                <div class="grid grid-cols-3 gap-2.5 mb-3">
-                    <div>
-                        <label for="input-x" class="block text-xs font-mono-code text-rose-400 font-bold mb-1">X <span class="text-[10px] text-slate-400">(Izq/Der)</span></label>
-                        <div class="flex items-center bg-slate-950/90 border border-slate-700 focus-within:border-teal-400 rounded-lg overflow-hidden">
-                            <button type="button" data-axis="x" data-step="-1" class="step-btn px-2 py-2 text-slate-400 hover:text-white hover:bg-slate-800 font-bold">−</button>
-                            <input type="number" id="input-x" step="0.5" value="0" class="w-full bg-transparent text-white text-center font-bold text-base py-1.5 outline-none">
-                            <button type="button" data-axis="x" data-step="1" class="step-btn px-2 py-2 text-slate-400 hover:text-white hover:bg-slate-800 font-bold">+</button>
+                <div class="inputs-grid">
+                    <div class="axis-box">
+                        <label for="inp-x" style="color: #fb7185;">X (Izq/Der)</label>
+                        <div class="stepper">
+                            <button type="button" data-axis="x" data-step="-1">−</button>
+                            <input type="number" id="inp-x" step="0.5" value="0">
+                            <button type="button" data-axis="x" data-step="1">+</button>
                         </div>
                     </div>
-                    <div>
-                        <label for="input-y" class="block text-xs font-mono-code text-sky-400 font-bold mb-1">Y <span class="text-[10px] text-slate-400">(Fondo)</span></label>
-                        <div class="flex items-center bg-slate-950/90 border border-slate-700 focus-within:border-teal-400 rounded-lg overflow-hidden">
-                            <button type="button" data-axis="y" data-step="-1" class="step-btn px-2 py-2 text-slate-400 hover:text-white hover:bg-slate-800 font-bold">−</button>
-                            <input type="number" id="input-y" step="0.5" value="0" class="w-full bg-transparent text-white text-center font-bold text-base py-1.5 outline-none">
-                            <button type="button" data-axis="y" data-step="1" class="step-btn px-2 py-2 text-slate-400 hover:text-white hover:bg-slate-800 font-bold">+</button>
+                    <div class="axis-box">
+                        <label for="inp-y" style="color: #38bdf8;">Y (Fondo)</label>
+                        <div class="stepper">
+                            <button type="button" data-axis="y" data-step="-1">−</button>
+                            <input type="number" id="inp-y" step="0.5" value="0">
+                            <button type="button" data-axis="y" data-step="1">+</button>
                         </div>
                     </div>
-                    <div>
-                        <label for="input-z" class="block text-xs font-mono-code text-emerald-400 font-bold mb-1">Z <span class="text-[10px] text-slate-400">(Altura)</span></label>
-                        <div class="flex items-center bg-slate-950/90 border border-slate-700 focus-within:border-teal-400 rounded-lg overflow-hidden">
-                            <button type="button" data-axis="z" data-step="-1" class="step-btn px-2 py-2 text-slate-400 hover:text-white hover:bg-slate-800 font-bold">−</button>
-                            <input type="number" id="input-z" step="0.5" value="0" class="w-full bg-transparent text-white text-center font-bold text-base py-1.5 outline-none">
-                            <button type="button" data-axis="z" data-step="1" class="step-btn px-2 py-2 text-slate-400 hover:text-white hover:bg-slate-800 font-bold">+</button>
+                    <div class="axis-box">
+                        <label for="inp-z" style="color: #34d399;">Z (Altura)</label>
+                        <div class="stepper">
+                            <button type="button" data-axis="z" data-step="-1">−</button>
+                            <input type="number" id="inp-z" step="0.5" value="0">
+                            <button type="button" data-axis="z" data-step="1">+</button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Cálculo Instantáneo de Magnitud |V|, Ángulo θxy y Punto Destino -->
-                <div class="bg-slate-950/85 border border-slate-800 rounded-lg px-3 py-2 mb-3 flex flex-wrap justify-between items-center font-mono-code text-xs">
-                    <div class="text-amber-400 font-semibold">
-                        |V| = <span id="calc-mag">0.00</span> u &nbsp;|&nbsp; θxy = <span id="calc-angle">0.0°</span>
-                    </div>
-                    <div class="text-slate-400 text-[11px]">
-                        Destino: <span id="calc-dest" class="text-cyan-300 font-bold">(0.0, 0.0, 0.0)</span>
-                    </div>
+                <div class="calc-bar">
+                    <span style="color: var(--amber); font-weight: 700;">
+                        |V| = <span id="val-mag">0.00</span> u &nbsp;|&nbsp; θxy = <span id="val-ang">0.0°</span>
+                    </span>
+                    <span style="color: var(--cyan-bright); font-weight: 700;">
+                        Vectores Restantes: <span id="val-left">1/1</span>
+                    </span>
                 </div>
 
-                <!-- Botón Aplicar Vector -->
-                <button id="btn-apply-vector" class="w-full py-3 rounded-xl btn-primary-gradient text-sm tracking-wide">
+                <button id="btn-apply" class="btn btn-primary" style="width: 100%; padding: 11px;">
                     Aplicar Vector
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- ========================================================= -->
-    <!-- 7. MOTOR DE SIMULACIÓN, FÍSICA DE COLISIONES Y THREE.JS   -->
-    <!-- ========================================================= -->
+    <!-- =========================================================
+         7. LÓGICA DEL JUEGO, MOTOR 3D THREE.JS Y COLISIONES
+         ========================================================= -->
     <script>
-        // =========================================================================
-        // ESTADO GLOBAL, 10 CASOS CLÍNICOS Y 8 HABILIDADES
-        // =========================================================================
+        /* =========================================================
+           DATOS DE CAMPAÑA (10 CASOS CLÍNICOS) Y ÁRBOL DE HABILIDADES
+           ========================================================= */
         const state = {
             score: 0,
             skillPoints: 1,
             collisions: 0,
-            demoMode: false,
-            freePractice: false,
-            showGuides: true,
-            currentMissionId: 1,
-            vectorsRemaining: 1,
+            freeMode: false,
+            currentId: 1,
+            vectorsLeft: 1,
             maxVectors: 1,
-            energyUsed: 0,
             isAnimating: false,
             skills: [
-                { id: 'horiz', name: 'Desplazamiento Horizontal', desc: 'Habilita el control preciso del componente X en el plano quirúrgico.', cost: 0, unlocked: true },
-                { id: 'vert', name: 'Desplazamiento Vertical', desc: 'Habilita el control del componente Y para desplazamientos diagonales en 2D.', cost: 1, unlocked: true },
-                { id: 'sum', name: 'Suma de Vectores', desc: 'Permite encadenar dos o más vectores consecutivos para rodear obstáculos.', cost: 1, unlocked: false },
-                { id: 'angle', name: 'Giro Articular', desc: 'Optimiza la orientación angular θxy de la muñeca EndoWrist del robot.', cost: 2, unlocked: false },
-                { id: 'mov3d', name: 'Movimiento 3D', desc: 'Desbloquea el eje Z de elevación para operar en el espacio tridimensional.', cost: 2, unlocked: false },
-                { id: 'sub', name: 'Resta de Vectores', desc: 'Permite calcular maniobras de retorno y evasión mediante componentes negativas.', cost: 2, unlocked: false },
-                { id: 'grip', name: 'Agarre de Precisión', desc: 'Activa el cierre milimétrico de la pinza quirúrgica EndoWrist sobre tejidos y objetos.', cost: 3, unlocked: false },
-                { id: 'traj', name: 'Planificación de Trayectorias', desc: 'Habilita rutas multi-tramo de alta complejidad alrededor de múltiples equipos médicos.', cost: 4, unlocked: false }
+                { id: 'h', name: 'Desplazamiento Horizontal', desc: 'Controla el componente X del vector sobre el eje lateral.', cost: 0, unlocked: true },
+                { id: 'v', name: 'Desplazamiento Vertical', desc: 'Habilita el componente Y para trayectorias diagonales en 2D.', cost: 1, unlocked: false },
+                { id: 's', name: 'Suma de Vectores', desc: 'Encadena dos o más vectores consecutivos para rodear obstáculos.', cost: 1, unlocked: false },
+                { id: 'g', name: 'Giro Articular', desc: 'Control angular θxy de la muñeca robótica EndoWrist.', cost: 2, unlocked: false },
+                { id: 'm3', name: 'Movimiento 3D', desc: 'Desbloquea el eje Z de altura en el espacio tridimensional.', cost: 2, unlocked: false },
+                { id: 'r', name: 'Resta de Vectores', desc: 'Calcula maniobras de retorno y evasión con componentes negativas.', cost: 2, unlocked: false },
+                { id: 'a', name: 'Agarre de Precisión', desc: 'Activa la pinza EndoWrist para sujetar y trasladar objetos.', cost: 3, unlocked: false },
+                { id: 'p', name: 'Planificación de Trayectorias', desc: 'Rutas seguras de múltiples tramos entre equipos quirúrgicos.', cost: 4, unlocked: false }
             ],
             missions: [
                 {
-                    id: 1,
-                    patient: 'Ana Torres',
-                    title: 'Rehabilitación de hombro',
-                    concept: 'Desplazamiento lineal 1D en +X',
-                    quote: '🧠 Motivo médico: "Tras la cirugía de hombro derecho, necesito guiar el brazo lateralmente hasta la marca de extensión."',
-                    goal: 'Desplaza la pinza Da Vinci en línea recta sobre el eje +X desde Pᵢ(0, 0, 0) hasta Pᶠ(5, 0, 0) usando 1 vector.',
-                    implicitGuide: 'Un vector en un solo eje indica distancia y sentido (+ derecha / - izquierda). Resta las coordenadas X: d = Pᶠ - Pᵢ.',
-                    start: { x: 0, y: 0, z: 0 },
-                    target: { x: 5, y: 0, z: 0 },
-                    maxVectors: 1,
-                    ceilingZ: 6.0,
-                    obstacles: [],
-                    obstacleText: '',
-                    points: 150,
-                    skillReward: 1,
-                    completed: false
+                    id: 1, patient: 'Ana Torres', diag: 'Rehabilitación de hombro (post-cirugía)',
+                    concept: '1D • Eje +X',
+                    quote: '🧠 Paciente: "Tras mi cirugía de hombro, no logro extender el brazo lateralmente hasta la marca."',
+                    goal: 'Desplaza la pinza Da Vinci en línea recta sobre el eje +X desde Pᵢ hasta Pᶠ.',
+                    implicit: 'Un vector en un solo eje indica distancia y sentido. Resta las coordenadas: d = Pᶠ - Pᵢ = (5 - 0, 0, 0).',
+                    start: { x: 0, y: 0, z: 0 }, target: { x: 5, y: 0, z: 0 },
+                    maxVectors: 1, ceilingZ: 6.0, obstacles: [], obstacleMsg: '',
+                    points: 150, skillReward: 1, completed: false
                 },
                 {
-                    id: 2,
-                    patient: 'Luis Fernández',
-                    title: 'Fisioterapia diagonal de muñeca',
-                    concept: 'Plano 2D, magnitud |V| y ángulo θxy',
-                    quote: '🧠 Motivo médico: "Debo alcanzar el sensor diagonal sobre la mesa evitando el carro lateral de monitoreo."',
-                    goal: 'Calcula el vector diagonal en 2D desde Pᵢ(1, 1, 0) hasta Pᶠ(6, 5, 0) en 1 solo movimiento sin tocar el obstáculo.',
-                    implicitGuide: 'En 2D combinas ΔX y ΔY simultáneamente: V = (xᶠ - xᵢ, yᶠ - yᵢ, 0). Observa cómo |V| = √(X² + Y²) es la hipotenusa.',
-                    start: { x: 1, y: 1, z: 0 },
-                    target: { x: 6, y: 5, z: 0 },
-                    maxVectors: 1,
-                    ceilingZ: 6.0,
-                    obstacles: [
-                        { name: 'Carro Lateral de Monitoreo', min: { x: 4.5, y: 0.2, z: -0.5 }, max: { x: 6.5, y: 2.5, z: 3.0 }, color: 0xf43f5e }
-                    ],
-                    obstacleText: 'Carro Lateral en X:[4.5, 6.5], Y:[0.2, 2.5]. La diagonal directa pasa libre por el centro.',
-                    points: 200,
-                    skillReward: 1,
-                    completed: false
+                    id: 2, patient: 'Luis Fernández', diag: 'Fisioterapia diagonal de muñeca',
+                    concept: 'Plano 2D • Magnitud y Dirección',
+                    quote: '🧠 Paciente: "Necesito alcanzar el sensor diagonal evitando el carro lateral de monitoreo."',
+                    goal: 'Calcula el vector diagonal en 2D desde Pᵢ(1, 1, 0) hasta Pᶠ(6, 5, 0) en 1 movimiento.',
+                    implicit: 'Combina ΔX y ΔY a la vez: d = Pᶠ - Pᵢ = (6-1, 5-1, 0). Observa cómo |V| = √(X² + Y²) es la distancia exacta.',
+                    start: { x: 1, y: 1, z: 0 }, target: { x: 6, y: 5, z: 0 },
+                    maxVectors: 1, ceilingZ: 6.0,
+                    obstacles: [{ name: 'Carro de Instrumental', min: { x: 4.5, y: 0.2, z: -0.5 }, max: { x: 6.5, y: 2.4, z: 2.5 } }],
+                    obstacleMsg: 'Carro de Instrumental en X:[4.5, 6.5], Y:[0.2, 2.4].',
+                    points: 200, skillReward: 1, completed: false
                 },
                 {
-                    id: 3,
-                    patient: 'Sofía Ramírez',
-                    title: 'Recuperación motora fina',
-                    concept: 'Suma de vectores consecutivos (2 tramos)',
-                    quote: '🧠 Motivo médico: "Hay una mesa auxiliar entre mi mano y el objetivo; debemos rodearla en dos etapas."',
-                    goal: 'Rodea la mesa quirúrgica desde Pᵢ(0, 1, 0) hasta Pᶠ(6, 1, 0) encadenando 2 vectores consecutivos.',
-                    implicitGuide: 'Cuando una línea recta choca con un obstáculo, divides la ruta en dos vectores: V₁ te lleva a un punto libre (ej. Y=4) y V₂ cierra hasta Pᶠ (V₁ + V₂ = d).',
-                    start: { x: 0, y: 1, z: 0 },
-                    target: { x: 6, y: 1, z: 0 },
-                    maxVectors: 2,
-                    ceilingZ: 6.0,
-                    obstacles: [
-                        { name: 'Mesa Auxiliar Estéril', min: { x: 2.0, y: -0.5, z: -0.5 }, max: { x: 4.0, y: 2.6, z: 2.5 }, color: 0xf43f5e }
-                    ],
-                    obstacleText: 'Mesa Auxiliar bloqueando X:[2.0, 4.0], Y:[-0.5, 2.6]. Rodea por Y ≥ 3.',
-                    points: 250,
-                    skillReward: 2,
-                    completed: false
+                    id: 3, patient: 'Sofía Ramírez', diag: 'Recuperación motora fina',
+                    concept: 'Suma de Vectores (2 tramos)',
+                    quote: '🧠 Paciente: "Hay una mesa auxiliar entre mi mano y el objetivo; debemos rodearla."',
+                    goal: 'Rodea la mesa quirúrgica desde Pᵢ(0, 1, 0) hasta Pᶠ(6, 1, 0) encadenando 2 vectores.',
+                    implicit: 'Al haber un obstáculo en línea recta, suma dos vectores: V₁ te lleva a un punto libre (ej. Y=4) y V₂ cierra hasta Pᶠ.',
+                    start: { x: 0, y: 1, z: 0 }, target: { x: 6, y: 1, z: 0 },
+                    maxVectors: 2, ceilingZ: 6.0,
+                    obstacles: [{ name: 'Mesa Auxiliar Estéril', min: { x: 2.0, y: -0.5, z: -0.5 }, max: { x: 4.0, y: 2.6, z: 2.5 } }],
+                    obstacleMsg: 'Mesa Auxiliar bloqueando X:[2.0, 4.0], Y:[-0.5, 2.6]. Rodea por Y ≥ 3.',
+                    points: 250, skillReward: 2, completed: false
                 },
                 {
-                    id: 4,
-                    patient: 'Marco Vidal',
-                    title: 'Recuperación angular de codo',
-                    concept: 'Componentes negativas en X/Y y cuadrante izquierdo',
-                    quote: '🧠 Motivo médico: "Mi codo quedó en extensión derecha; necesito retraerlo hacia el cuadrante izquierdo."',
-                    goal: 'Desplaza la pinza desde Pᵢ(4, 3, 0) hasta Pᶠ(-2, -1, 0) rodeando la columna central en máximo 2 vectores.',
-                    implicitGuide: 'Desplazarse hacia la izquierda o hacia atrás implica componentes negativas (-X, -Y), orientando θxy hacia el tercer cuadrante.',
-                    start: { x: 4, y: 3, z: 0 },
-                    target: { x: -2, y: -1, z: 0 },
-                    maxVectors: 2,
-                    ceilingZ: 6.0,
-                    obstacles: [
-                        { name: 'Columna de Suero Central', min: { x: 0.3, y: 0.3, z: -0.5 }, max: { x: 1.7, y: 1.7, z: 3.5 }, color: 0xf43f5e }
-                    ],
-                    obstacleText: 'Columna Central en X:[0.3, 1.7], Y:[0.3, 1.7]. Evita el cruce directo por (1, 1).',
-                    points: 280,
-                    skillReward: 2,
-                    completed: false
+                    id: 4, patient: 'Marco Vidal', diag: 'Recuperación angular de codo',
+                    concept: 'Componentes Negativas (-X, -Y)',
+                    quote: '🧠 Paciente: "Mi codo quedó extendido a la derecha; ayúdame a retraerlo hacia el lado izquierdo."',
+                    goal: 'Lleva la pinza desde Pᵢ(4, 3, 0) hasta Pᶠ(-2, -1, 0) evitando la columna central (máx. 2 vectores).',
+                    implicit: 'Retroceder hacia la izquierda o atrás requiere signos negativos en X e Y: d = Pᶠ - Pᵢ.',
+                    start: { x: 4, y: 3, z: 0 }, target: { x: -2, y: -1, z: 0 },
+                    maxVectors: 2, ceilingZ: 6.0,
+                    obstacles: [{ name: 'Columna de Suero', min: { x: 0.4, y: 0.4, z: -0.5 }, max: { x: 1.6, y: 1.6, z: 3.2 } }],
+                    obstacleMsg: 'Columna de Suero en X:[0.4, 1.6], Y:[0.4, 1.6].',
+                    points: 280, skillReward: 2, completed: false
                 },
                 {
-                    id: 5,
-                    patient: 'Elena Castro',
-                    title: 'Rehabilitación de columna cervical',
-                    concept: 'Movimiento 3D completo (+Z sobre barrera)',
-                    quote: '🧠 Motivo médico: "Debemos elevar el soporte cervical por encima de la barrera estéril hasta el sensor superior."',
-                    goal: 'Incorpora el eje Z de altura para ir desde Pᵢ(0, 2, 0) hasta Pᶠ(5, 2, 3) pasando por encima de la barrera.',
-                    implicitGuide: 'En R³ agregas la componente Z (altura). Al elevar Z desde 0 hasta 3, la trayectoria asciende en diagonal tridimensional sobre la barrera baja.',
-                    start: { x: 0, y: 2, z: 0 },
-                    target: { x: 5, y: 2, z: 3 },
-                    maxVectors: 2,
-                    ceilingZ: 6.0,
-                    obstacles: [
-                        { name: 'Barrera Estéril Baja', min: { x: 1.8, y: 0.5, z: -0.5 }, max: { x: 3.2, y: 3.5, z: 1.1 }, color: 0xf43f5e }
-                    ],
-                    obstacleText: 'Barrera Estéril en X:[1.8, 3.2] con altura Z hasta 1.1 u.',
-                    points: 300,
-                    skillReward: 2,
-                    completed: false
+                    id: 5, patient: 'Elena Castro', diag: 'Rehabilitación post-trauma cervical',
+                    concept: 'Elevación 3D • Eje Z',
+                    quote: '🧠 Paciente: "Debemos elevar el soporte cervical por encima de la barrera estéril."',
+                    goal: 'Usa el eje Z de altura para ir de Pᵢ(0, 2, 0) a Pᶠ(5, 2, 3) superando la barrera baja.',
+                    implicit: 'En 3D sumas la componente Z (altura). Al elevar Z de 0 a 3, el vector asciende en diagonal sobre la barrera.',
+                    start: { x: 0, y: 2, z: 0 }, target: { x: 5, y: 2, z: 3 },
+                    maxVectors: 2, ceilingZ: 6.0,
+                    obstacles: [{ name: 'Barrera Estéril Baja', min: { x: 1.8, y: 0.5, z: -0.5 }, max: { x: 3.2, y: 3.5, z: 1.1 } }],
+                    obstacleMsg: 'Barrera Estéril en X:[1.8, 3.2] con altura Z ≤ 1.1 u.',
+                    points: 300, skillReward: 2, completed: false
                 },
                 {
-                    id: 6,
-                    patient: 'Diego Molina',
-                    title: 'Neurorehabilitación de coordinación',
-                    concept: 'Arco vectorial 3D: elevación +Z y descenso -Z',
-                    quote: '🧠 Motivo médico: "La mesa de Mayo bloquea el plano horizontal; ejecuta un puente aéreo sobre ella."',
-                    goal: 'Desde Pᵢ(0, 3, 0), sube en +Z para librar la Mesa de Mayo y desciende en -Z hasta Pᶠ(6, 3, 0) en 2 vectores.',
-                    implicitGuide: 'Un puente aéreo 3D consta de dos vectores: V₁ con +Z para superar la altura del obstáculo (Z > 2.0) y V₂ con -Z para aterrizar en Pᶠ.',
-                    start: { x: 0, y: 3, z: 0 },
-                    target: { x: 6, y: 3, z: 0 },
-                    maxVectors: 2,
-                    ceilingZ: 6.0,
-                    obstacles: [
-                        { name: 'Mesa de Mayo Quirúrgica', min: { x: 2.0, y: 1.2, z: -0.5 }, max: { x: 4.0, y: 4.8, z: 1.8 }, color: 0xf43f5e }
-                    ],
-                    obstacleText: 'Mesa de Mayo en X:[2.0, 4.0], Y:[1.2, 4.8], Altura Z ≤ 1.8 u.',
-                    points: 340,
-                    skillReward: 3,
-                    completed: false
+                    id: 6, patient: 'Diego Molina', diag: 'Neurorehabilitación de coordinación',
+                    concept: 'Arco Vectorial 3D (+Z y -Z)',
+                    quote: '🧠 Paciente: "La Mesa de Mayo bloquea el plano; haz un puente aéreo por encima."',
+                    goal: 'Sube en +Z sobre la Mesa de Mayo y desciende en -Z hasta Pᶠ(6, 3, 0) en máximo 3 vectores.',
+                    implicit: 'Un arco 3D combina un vector con +Z (subida por encima de Z=2) y luego un vector con -Z para bajar a Pᶠ.',
+                    start: { x: 0, y: 3, z: 0 }, target: { x: 6, y: 3, z: 0 },
+                    maxVectors: 3, ceilingZ: 6.0,
+                    obstacles: [{ name: 'Mesa de Mayo', min: { x: 2.0, y: 1.2, z: -0.5 }, max: { x: 4.0, y: 4.8, z: 1.8 } }],
+                    obstacleMsg: 'Mesa de Mayo en X:[2.0, 4.0], Y:[1.2, 4.8], altura Z ≤ 1.8 u.',
+                    points: 340, skillReward: 3, completed: false
                 },
                 {
-                    id: 7,
-                    patient: 'Valeria Núñez',
-                    title: 'Terapia ocupacional de agarre',
-                    concept: 'Restricción de techo quirúrgico Z < 3.5 bajo lámpara',
-                    quote: '🧠 Motivo médico: "La lámpara scialítica está descendida; mantén la pinza por debajo de Z = 3.5 mientras rodeas el monitor."',
-                    goal: 'Lleva la pinza de Pᵢ(-1, 2, 1) a Pᶠ(5, 2, 1) sin superar el techo Z = 3.5 ni chocar con el monitor inferior (2 vectores máx).',
-                    implicitGuide: 'Cuando el espacio vertical tiene cota superior (Z < 3.5), debes navegar en el corredor intermedio (ej. Z = 2.5) o rodear lateralmente en Y.',
-                    start: { x: -1, y: 2, z: 1 },
-                    target: { x: 5, y: 2, z: 1 },
-                    maxVectors: 2,
-                    ceilingZ: 3.5,
+                    id: 7, patient: 'Valeria Núñez', diag: 'Terapia ocupacional bajo techo',
+                    concept: 'Cota Superior Z < 3.5',
+                    quote: '🧠 Paciente: "La lámpara scialítica está baja; mantén la pinza debajo de Z = 3.5."',
+                    goal: 'Ve de Pᵢ(-1, 2, 1) a Pᶠ(5, 2, 1) sin superar Z = 3.5 ni tocar el monitor inferior (2 vec. máx.).',
+                    implicit: 'Navega en el corredor intermedio (Z ≈ 2.6) o rodea lateralmente en Y manteniendo Z < 3.5.',
+                    start: { x: -1, y: 2, z: 1 }, target: { x: 5, y: 2, z: 1 },
+                    maxVectors: 2, ceilingZ: 3.5,
                     obstacles: [
-                        { name: 'Monitor Laparoscópico', min: { x: 1.2, y: 0.8, z: -0.5 }, max: { x: 2.8, y: 3.2, z: 2.0 }, color: 0xf43f5e },
-                        { name: 'Lámpara Scialítica Baja (Z ≥ 3.5)', min: { x: -6.0, y: -6.0, z: 3.5 }, max: { x: 8.0, y: 8.0, z: 6.5 }, color: 0x38bdf8, isCeiling: true }
+                        { name: 'Monitor Laparoscópico', min: { x: 1.2, y: 0.8, z: -0.5 }, max: { x: 2.8, y: 3.2, z: 2.0 } },
+                        { name: 'Lámpara Scialítica Baja (Z ≥ 3.5)', min: { x: -6.0, y: -6.0, z: 3.5 }, max: { x: 8.0, y: 8.0, z: 6.0 }, isCeiling: true }
                     ],
-                    obstacleText: 'Monitor Inferior (Z ≤ 2.0) y Lámpara Scialítica Superior (Techo Z < 3.5).',
-                    points: 380,
-                    skillReward: 3,
-                    completed: false
+                    obstacleMsg: 'Monitor Inferior (Z ≤ 2.0) y Lámpara Superior (Techo Z < 3.5).',
+                    points: 380, skillReward: 3, completed: false
                 },
                 {
-                    id: 8,
-                    patient: 'Roberto Méndez',
-                    title: 'Extracción de precisión EndoWrist',
-                    concept: 'Trayectoria en 3 tramos sorteando doble obstáculo',
-                    quote: '🧠 Motivo médico: "Dos estaciones de anestesia forman un zig-zag; planifica tres vectores exactos."',
-                    goal: 'Navega en zig-zag desde Pᵢ(-2, 0, 0) hasta Pᶠ(6, 4, 1) sorteando los dos bloques en máximo 3 vectores.',
-                    implicitGuide: 'Descompón el recorrido en 3 segmentos rectilíneos conectados (V₁ + V₂ + V₃ = Pᶠ - Pᵢ) verificando cada tramo con la flecha holográfica.',
-                    start: { x: -2, y: 0, z: 0 },
-                    target: { x: 6, y: 4, z: 1 },
-                    maxVectors: 3,
-                    ceilingZ: 6.0,
+                    id: 8, patient: 'Roberto Méndez', diag: 'Extracción con pinza EndoWrist',
+                    concept: 'Agarre y Transporte (3 tramos)',
+                    quote: '🧠 Paciente: "Dos estaciones médicas forman un zig-zag; traza una ruta limpia de 3 vectores."',
+                    goal: 'Navega desde Pᵢ(-2, 0, 0) hasta Pᶠ(6, 4, 1) sorteando ambos equipos en máximo 3 vectores.',
+                    implicit: 'Encadena 3 vectores (V₁ + V₂ + V₃ = Pᶠ - Pᵢ) verificando cada tramo con la flecha holográfica.',
+                    start: { x: -2, y: 0, z: 0 }, target: { x: 6, y: 4, z: 1 },
+                    maxVectors: 3, ceilingZ: 6.0,
                     obstacles: [
-                        { name: 'Estación de Anestesia A', min: { x: 0.2, y: -1.5, z: -0.5 }, max: { x: 1.6, y: 2.2, z: 3.0 }, color: 0xf43f5e },
-                        { name: 'Bomba de Infusión B', min: { x: 3.2, y: 1.8, z: -0.5 }, max: { x: 4.6, y: 5.5, z: 3.0 }, color: 0xf43f5e }
+                        { name: 'Estación de Anestesia', min: { x: 0.2, y: -1.5, z: -0.5 }, max: { x: 1.6, y: 2.2, z: 3.0 } },
+                        { name: 'Bomba de Infusión', min: { x: 3.2, y: 1.8, z: -0.5 }, max: { x: 4.6, y: 5.5, z: 3.0 } }
                     ],
-                    obstacleText: 'Doble obstáculo escalonado en X:[0.2, 1.6] y X:[3.2, 4.6].',
-                    points: 420,
-                    skillReward: 3,
-                    completed: false
+                    obstacleMsg: 'Doble obstáculo en X:[0.2, 1.6] y X:[3.2, 4.6].',
+                    points: 420, skillReward: 3, completed: false
                 },
                 {
-                    id: 9,
-                    patient: 'Camila Herrera',
-                    title: 'Navegación de alta precisión',
-                    concept: 'Corredor estrecho entre dos torres laparoscópicas',
-                    quote: '🧠 Motivo médico: "El acceso quirúrgico pasa por un canal estrecho entre dos torres endoscópicas."',
-                    goal: 'Atraviesa el corredor entre ambas torres desde Pᵢ(-2, 4, 0) hasta Pᶠ(6, 0, 2) en máximo 3 vectores.',
-                    implicitGuide: 'Alinea primero la pinza con la entrada del corredor (Y = 2) y luego cruza el canal con precisión milimétrica antes de ascender a Pᶠ.',
-                    start: { x: -2, y: 4, z: 0 },
-                    target: { x: 6, y: 0, z: 2 },
-                    maxVectors: 3,
-                    ceilingZ: 6.0,
+                    id: 9, patient: 'Camila Herrera', diag: 'Corredor de doble torre',
+                    concept: 'Navegación Precisa (3 tramos)',
+                    quote: '🧠 Paciente: "El acceso pasa por un pasillo estrecho entre dos torres laparoscópicas."',
+                    goal: 'Cruza el corredor entre ambas torres desde Pᵢ(-2, 4, 0) hasta Pᶠ(6, 0, 2) en 3 vectores máx.',
+                    implicit: 'Alinea primero la pinza con la entrada del corredor (Y = 2) antes de cruzar entre X=1.2 y X=3.0.',
+                    start: { x: -2, y: 4, z: 0 }, target: { x: 6, y: 0, z: 2 },
+                    maxVectors: 3, ceilingZ: 6.0,
                     obstacles: [
-                        { name: 'Torre Laparoscópica Norte', min: { x: 1.2, y: 2.7, z: -0.5 }, max: { x: 3.0, y: 6.0, z: 4.0 }, color: 0xf43f5e },
-                        { name: 'Torre Laparoscópica Sur', min: { x: 1.2, y: -2.0, z: -0.5 }, max: { x: 3.0, y: 1.3, z: 4.0 }, color: 0xf43f5e }
+                        { name: 'Torre Norte', min: { x: 1.2, y: 2.7, z: -0.5 }, max: { x: 3.0, y: 6.0, z: 4.0 } },
+                        { name: 'Torre Sur', min: { x: 1.2, y: -2.0, z: -0.5 }, max: { x: 3.0, y: 1.3, z: 4.0 } }
                     ],
-                    obstacleText: 'Corredor estrecho en X:[1.2, 3.0] libre únicamente alrededor de Y = 2.0.',
-                    points: 460,
-                    skillReward: 4,
-                    completed: false
+                    obstacleMsg: 'Corredor libre únicamente alrededor de Y = 2.0 en X:[1.2, 3.0].',
+                    points: 460, skillReward: 4, completed: false
                 },
                 {
-                    id: 10,
-                    patient: 'Hugo Salazar',
-                    title: 'Rehabilitación integral post-ictus',
-                    concept: 'Planificación 3D integral en 3 tramos (X, Y, Z)',
-                    quote: '🧠 Motivo médico: "Cirugía maestra de rehabilitación integral: combina traslación en el plano, elevación 3D y descenso preciso."',
-                    goal: 'Completa el circuito maestro desde Pᵢ(-3, -1, 0) hasta Pᶠ(6, 5, 1) sorteando el bloque central y el arco superior en 3 vectores.',
-                    implicitGuide: 'Aplica todo lo aprendido: P_final = P₀ + V₁ + V₂ + V₃. Combina desplazamientos en X, Y y Z manteniendo |V| óptimo.',
-                    start: { x: -3, y: -1, z: 0 },
-                    target: { x: 6, y: 5, z: 1 },
-                    maxVectors: 3,
-                    ceilingZ: 5.0,
+                    id: 10, patient: 'Hugo Salazar', diag: 'Rehabilitación integral post-ictus',
+                    concept: 'Planificación 3D Integral (3 tramos)',
+                    quote: '🧠 Paciente: "Cirugía maestra integral: combina traslación en el plano y elevación 3D."',
+                    goal: 'Llega desde Pᵢ(-3, -1, 0) hasta Pᶠ(6, 5, 1) sorteando las dos barreras en máximo 3 vectores.',
+                    implicit: 'Integra todo: Pᶠ = Pᵢ + V₁ + V₂ + V₃. Combina rodeo en Y con elevación en Z si es necesario.',
+                    start: { x: -3, y: -1, z: 0 }, target: { x: 6, y: 5, z: 1 },
+                    maxVectors: 3, ceilingZ: 5.5,
                     obstacles: [
-                        { name: 'Consola Central Da Vinci', min: { x: -0.5, y: -2.5, z: -0.5 }, max: { x: 1.2, y: 3.2, z: 2.2 }, color: 0xf43f5e },
-                        { name: 'Brazo de Monitor Superior', min: { x: 2.6, y: 1.5, z: -0.5 }, max: { x: 4.2, y: 6.5, z: 2.5 }, color: 0xf43f5e }
+                        { name: 'Consola Central', min: { x: -0.5, y: -2.5, z: -0.5 }, max: { x: 1.2, y: 3.2, z: 2.2 } },
+                        { name: 'Brazo Monitor Superior', min: { x: 2.6, y: 1.5, z: -0.5 }, max: { x: 4.2, y: 6.5, z: 2.5 } }
                     ],
-                    obstacleText: 'Doble barrera tridimensional: rodea por Y > 3.2 y luego cruza por Y < 1.5 o altura Z > 2.5.',
-                    points: 600,
-                    skillReward: 5,
-                    completed: false
+                    obstacleMsg: 'Dos bloques 3D en X:[-0.5, 1.2] y X:[2.6, 4.2].',
+                    points: 600, skillReward: 5, completed: false
                 }
             ]
         };
 
-        // =========================================================================
-        // CONVERSIÓN DE COORDENADAS: MATEMÁTICAS (X, Y, Z) <-> THREE.JS
-        // =========================================================================
-        const FLOOR_OFFSET_Y = 1.45; // Z_mat = 0 corresponde a esta altura sobre el piso
+        /* =========================================================
+           CONVERSIÓN DE COORDENADAS Y MOTOR DE ANIMACIÓN PROPIO
+           ========================================================= */
+        const FLOOR_Y = 1.45;
         const ARENA_LIMIT = 8.5;
+        const TOLERANCE = 0.35;
+
+        let currentPi = { x: 0, y: 0, z: 0 };
+        let currentPf = { x: 5, y: 0, z: 0 };
+        let activeTweens = [];
 
         function mathToWorld(v) {
-            return new THREE.Vector3(v.x, FLOOR_OFFSET_Y + v.z, -v.y);
+            return new THREE.Vector3(v.x, FLOOR_Y + v.z, -v.y);
         }
 
         function worldToMath(w) {
             return {
                 x: Math.round(w.x * 10) / 10,
                 y: Math.round(-w.z * 10) / 10,
-                z: Math.round((w.y - FLOOR_OFFSET_Y) * 10) / 10
+                z: Math.round((w.y - FLOOR_Y) * 10) / 10
             };
         }
 
-        // =========================================================================
-        // ESCENA THREE.JS, TEXTURAS PROCEDURALES Y BRAZO DA VINCI
-        // =========================================================================
-        let scene, camera, renderer, controls;
-        let currentPi = { x: 0, y: 0, z: 0 };
-        let currentPf = { x: 5, y: 0, z: 0 };
+        function runTween(fromObj, toObj, duration, onUpdate, onComplete) {
+            const start = performance.now();
+            const init = { x: fromObj.x, y: fromObj.y, z: fromObj.z };
+            activeTweens.push({
+                update(now) {
+                    const t = Math.min(1, (now - start) / duration);
+                    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+                    fromObj.x = init.x + (toObj.x - init.x) * ease;
+                    fromObj.y = init.y + (toObj.y - init.y) * ease;
+                    fromObj.z = init.z + (toObj.z - init.z) * ease;
+                    if (onUpdate) onUpdate();
+                    if (t >= 1) {
+                        if (onComplete) onComplete();
+                        return false;
+                    }
+                    return true;
+                }
+            });
+        }
 
-        const robot = {
-            root: null,
-            turret: null,
-            shoulder: null,
-            upperArm: null,
-            elbow: null,
-            forearm: null,
-            wrist: null,
-            shaft: null,
-            effector: null,
-            jawL: null,
-            jawR: null
-        };
+        /* =========================================================
+           ESCENA THREE.JS, TEXTURAS PROCEDURALES Y BRAZO DA VINCI
+           ========================================================= */
+        let scene, camera, renderer;
+        let camTarget = new THREE.Vector3(2.0, 1.8, -2.0);
+        let camSpherical = { radius: 17.5, theta: 0.15, phi: 1.02 };
 
-        let targetGroup, targetRing;
-        let obstaclesGroup, previewGroup, trailGroup;
+        const robot = {};
+        let targetGroup, targetRing, obstaclesGroup, previewGroup, trailGroup;
 
-        // Generador de texturas procedurales con CanvasTexture
-        function createHospitalFloorTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-
-            ctx.fillStyle = '#1e293b';
-            ctx.fillRect(0, 0, 512, 512);
-
-            // Moteado tipo terrazo clínico
-            for (let i = 0; i < 2400; i++) {
-                const x = Math.random() * 512;
-                const y = Math.random() * 512;
-                const r = Math.random() * 2.2;
-                ctx.fillStyle = i % 3 === 0 ? 'rgba(148, 163, 184, 0.22)' : (i % 2 === 0 ? 'rgba(56, 189, 248, 0.14)' : 'rgba(15, 23, 42, 0.35)');
+        function createFloorTexture() {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#182436';
+            ctx.fillRect(0, 0, 256, 256);
+            for (let i = 0; i < 900; i++) {
+                ctx.fillStyle = i % 3 === 0 ? 'rgba(148,163,184,0.2)' : (i % 2 === 0 ? 'rgba(56,189,248,0.12)' : 'rgba(10,16,29,0.35)');
                 ctx.beginPath();
-                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.arc(Math.random() * 256, Math.random() * 256, Math.random() * 1.8, 0, Math.PI * 2);
                 ctx.fill();
             }
-
-            // Junta de baldosa sutil
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
             ctx.lineWidth = 2;
-            ctx.strokeRect(1, 1, 510, 510);
-
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
+            ctx.strokeRect(1, 1, 254, 254);
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
             tex.repeat.set(14, 14);
             return tex;
         }
 
-        function createSurgicalDrapeTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 256;
-            canvas.height = 256;
-            const ctx = canvas.getContext('2d');
-
-            const grad = ctx.createLinearGradient(0, 0, 256, 256);
-            grad.addColorStop(0, '#0284c7');
-            grad.addColorStop(0.5, '#0369a1');
-            grad.addColorStop(1, '#075985');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, 256, 256);
-
-            // Trama textil y pliegues suaves
-            ctx.strokeStyle = 'rgba(224, 242, 254, 0.08)';
-            ctx.lineWidth = 1;
-            for (let i = 0; i < 256; i += 6) {
-                ctx.beginPath();
-                ctx.moveTo(i, 0);
-                ctx.lineTo(i, 256);
-                ctx.stroke();
-            }
-            for (let j = 0; j < 256; j += 28) {
-                ctx.fillStyle = 'rgba(12, 74, 110, 0.25)';
-                ctx.fillRect(0, j, 256, 6);
-            }
-
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
-            return tex;
+        function createDrapeTexture() {
+            const c = document.createElement('canvas');
+            c.width = 128; c.height = 128;
+            const ctx = c.getContext('2d');
+            const g = ctx.createLinearGradient(0, 0, 128, 128);
+            g.addColorStop(0, '#0284c7'); g.addColorStop(1, '#075985');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 128, 128);
+            ctx.fillStyle = 'rgba(12,74,110,0.3)';
+            for (let y = 0; y < 128; y += 20) ctx.fillRect(0, y, 128, 4);
+            return new THREE.CanvasTexture(c);
         }
 
-        function createPACSRadiologyTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 256;
-            const ctx = canvas.getContext('2d');
-
+        function createMonitorTexture() {
+            const c = document.createElement('canvas');
+            c.width = 512; c.height = 256;
+            const ctx = c.getContext('2d');
             ctx.fillStyle = '#06121e';
             ctx.fillRect(0, 0, 512, 256);
-
-            // Cuadrícula de diagnóstico
-            ctx.strokeStyle = 'rgba(34, 211, 238, 0.16)';
-            ctx.lineWidth = 1;
-            for (let x = 0; x < 512; x += 24) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 256); ctx.stroke();
-            }
-            for (let y = 0; y < 256; y += 24) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
-            }
-
-            // Silueta radiológica torácica/biomecánica estilizada
-            ctx.strokeStyle = 'rgba(186, 230, 253, 0.72)';
-            ctx.lineWidth = 3;
-            for (let r = 0; r < 5; r++) {
-                ctx.beginPath();
-                ctx.ellipse(135, 95 + r * 20, 52 - r * 3, 12, 0, 0, Math.PI * 2);
-                ctx.stroke();
-            }
-            // Columna vertebral
-            ctx.fillStyle = 'rgba(125, 211, 252, 0.65)';
-            for (let v = 0; v < 7; v++) {
-                ctx.fillRect(128, 65 + v * 20, 14, 14);
-            }
-
-            // Onda ECG y telemetría
+            ctx.strokeStyle = 'rgba(34,211,238,0.18)';
+            for (let x = 0; x < 512; x += 24) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 256); ctx.stroke(); }
+            for (let y = 0; y < 256; y += 24) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke(); }
             ctx.strokeStyle = '#34d399';
-            ctx.lineWidth = 2.5;
+            ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.moveTo(255, 130);
-            ctx.lineTo(295, 130);
-            ctx.lineTo(310, 80);
-            ctx.lineTo(325, 175);
-            ctx.lineTo(340, 110);
-            ctx.lineTo(355, 130);
-            ctx.lineTo(485, 130);
+            ctx.moveTo(20, 130); ctx.lineTo(130, 130); ctx.lineTo(155, 70);
+            ctx.lineTo(175, 185); ctx.lineTo(195, 105); ctx.lineTo(215, 130);
+            ctx.lineTo(490, 130);
             ctx.stroke();
-
             ctx.fillStyle = '#38bdf8';
-            ctx.font = 'bold 16px monospace';
-            ctx.fillText('PACS // DA VINCI TELEMETRY', 255, 42);
+            ctx.font = 'bold 20px monospace';
+            ctx.fillText('NEUROVECTOR // ECG & PACS', 24, 42);
             ctx.fillStyle = '#34d399';
-            ctx.font = '14px monospace';
-            ctx.fillText('IK-SOLVER: ONLINE | R3 ACTIVE', 255, 215);
-
-            return new THREE.CanvasTexture(canvas);
+            ctx.font = '15px monospace';
+            ctx.fillText('DA VINCI IK: ONLINE | 72 BPM', 24, 224);
+            return new THREE.CanvasTexture(c);
         }
 
         function initThree() {
             const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x091524);
-            scene.fog = new THREE.Fog(0x091524, 24, 58);
+            scene.background = new THREE.Color(0x0a101d);
+            scene.fog = new THREE.Fog(0x0a101d, 26, 62);
 
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 120);
-            camera.position.set(1.5, 10.5, 14.5);
+            updateCameraFromSpherical();
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             container.appendChild(renderer.domElement);
 
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.target.set(2.0, 1.8, -2.0);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.06;
-            controls.maxPolarAngle = Math.PI / 2 - 0.03;
-            controls.minDistance = 4;
-            controls.maxDistance = 30;
-
-            // Iluminación Quirúrgica
-            const ambient = new THREE.AmbientLight(0xdbeafe, 0.65);
-            scene.add(ambient);
-
+            // Iluminación quirúrgica
+            scene.add(new THREE.AmbientLight(0xdbeafe, 0.7));
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
             dirLight.position.set(8, 18, 10);
             dirLight.castShadow = true;
-            dirLight.shadow.mapSize.width = 2048;
-            dirLight.shadow.mapSize.height = 2048;
-            const d = 15;
-            dirLight.shadow.camera.left = -d;
-            dirLight.shadow.camera.right = d;
-            dirLight.shadow.camera.top = d;
-            dirLight.shadow.camera.bottom = -d;
             scene.add(dirLight);
-
-            const scialyticSpot = new THREE.PointLight(0x38bdf8, 0.9, 22);
-            scialyticSpot.position.set(2.5, 7.5, -2.5);
-            scene.add(scialyticSpot);
+            const spot = new THREE.PointLight(0x38bdf8, 0.9, 25);
+            spot.position.set(2.5, 7.5, -2.5);
+            scene.add(spot);
 
             buildOperatingRoom();
             buildDaVinciArm();
-            buildTargetAndGroups();
+            buildDynamicGroups();
+            setupOrbitGestures(renderer.domElement);
 
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
             });
+        }
 
-            requestAnimationFrame(animate);
+        function updateCameraFromSpherical() {
+            const sinPhi = Math.sin(camSpherical.phi);
+            camera.position.set(
+                camTarget.x + camSpherical.radius * sinPhi * Math.sin(camSpherical.theta),
+                camTarget.y + camSpherical.radius * Math.cos(camSpherical.phi),
+                camTarget.z + camSpherical.radius * sinPhi * Math.cos(camSpherical.theta)
+            );
+            camera.lookAt(camTarget);
+        }
+
+        function setupOrbitGestures(domEl) {
+            let dragging = false;
+            let lastX = 0, lastY = 0;
+
+            domEl.addEventListener('mousedown', (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+            window.addEventListener('mouseup', () => { dragging = false; });
+            window.addEventListener('mousemove', (e) => {
+                if (!dragging) return;
+                camSpherical.theta -= (e.clientX - lastX) * 0.007;
+                camSpherical.phi = Math.max(0.12, Math.min(Math.PI / 2 - 0.05, camSpherical.phi - (e.clientY - lastY) * 0.007));
+                lastX = e.clientX; lastY = e.clientY;
+                updateCameraFromSpherical();
+            });
+
+            domEl.addEventListener('wheel', (e) => {
+                camSpherical.radius = Math.max(6, Math.min(30, camSpherical.radius + e.deltaY * 0.012));
+                updateCameraFromSpherical();
+            }, { passive: true });
+
+            // Soporte táctil para celulares y tablets
+            domEl.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    dragging = true;
+                    lastX = e.touches[0].clientX;
+                    lastY = e.touches[0].clientY;
+                }
+            }, { passive: true });
+            domEl.addEventListener('touchend', () => { dragging = false; });
+            domEl.addEventListener('touchmove', (e) => {
+                if (!dragging || e.touches.length !== 1) return;
+                camSpherical.theta -= (e.touches[0].clientX - lastX) * 0.008;
+                camSpherical.phi = Math.max(0.12, Math.min(Math.PI / 2 - 0.05, camSpherical.phi - (e.touches[0].clientY - lastY) * 0.008));
+                lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+                updateCameraFromSpherical();
+            }, { passive: true });
         }
 
         function buildOperatingRoom() {
-            const orGroup = new THREE.Group();
+            const g = new THREE.Group();
 
-            // 1. Piso hospitalario moteado con textura procedural
-            const floorMat = new THREE.MeshStandardMaterial({
-                map: createHospitalFloorTexture(),
-                roughness: 0.65,
-                metalness: 0.12
-            });
-            const floor = new THREE.Mesh(new THREE.PlaneGeometry(42, 42), floorMat);
+            // Piso hospitalario texturizado
+            const floor = new THREE.Mesh(
+                new THREE.PlaneGeometry(42, 42),
+                new THREE.MeshStandardMaterial({ map: createFloorTexture(), roughness: 0.7 })
+            );
             floor.rotation.x = -Math.PI / 2;
             floor.receiveShadow = true;
-            orGroup.add(floor);
+            g.add(floor);
 
-            // Cuadrícula cartesiana de coordenadas
-            const grid = new THREE.GridHelper(20, 20, 0x2dd4bf, 0x334155);
+            // Cuadrícula y ejes X (rojo), Y (azul), Z (verde)
+            const grid = new THREE.GridHelper(20, 20, 0x10b981, 0x334155);
             grid.position.y = 0.015;
-            orGroup.add(grid);
+            g.add(grid);
 
-            // Ejes cartesianos X (rojo), Y (azul), Z (verde)
-            const originFloor = new THREE.Vector3(0, 0.04, 0);
-            const axisX = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), originFloor, 8.5, 0xf43f5e, 0.4, 0.22);
-            const axisY = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), originFloor, 8.5, 0x38bdf8, 0.4, 0.22);
-            const axisZ = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, FLOOR_OFFSET_Y, 0), 5.5, 0x34d399, 0.4, 0.22);
-            orGroup.add(axisX, axisY, axisZ);
+            const oFloor = new THREE.Vector3(0, 0.04, 0);
+            g.add(new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), oFloor, 8.5, 0xf43f5e, 0.4, 0.22));
+            g.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), oFloor, 8.5, 0x38bdf8, 0.4, 0.22));
+            g.add(new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, FLOOR_Y, 0), 5.5, 0x34d399, 0.4, 0.22));
 
-            // Perímetro quirúrgico seguro
-            const perimeterGeo = new THREE.RingGeometry(11.8, 12.0, 64);
-            const perimeterMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, side: THREE.DoubleSide, transparent: true, opacity: 0.35 });
-            const perimeter = new THREE.Mesh(perimeterGeo, perimeterMat);
-            perimeter.rotation.x = -Math.PI / 2;
-            perimeter.position.y = 0.02;
-            orGroup.add(perimeter);
-
-            // 2. Paredes del Quirófano con paneles cian iluminados
-            const wallMat = new THREE.MeshStandardMaterial({ color: 0x132238, roughness: 0.8 });
-            const cyanPanelMat = new THREE.MeshStandardMaterial({
-                color: 0x0ea5e9,
-                emissive: 0x0284c7,
-                emissiveIntensity: 0.35,
-                roughness: 0.3
-            });
-
+            // Paredes clínicas con acento cian
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x112036, roughness: 0.8 });
             const backWall = new THREE.Mesh(new THREE.BoxGeometry(34, 11, 0.4), wallMat);
             backWall.position.set(0, 5.5, -12.5);
-            backWall.receiveShadow = true;
-            orGroup.add(backWall);
+            g.add(backWall);
 
-            const backPanel = new THREE.Mesh(new THREE.BoxGeometry(14, 5.5, 0.15), cyanPanelMat);
-            backPanel.position.set(-4.5, 4.2, -12.2);
-            orGroup.add(backPanel);
-
-            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 11, 34), wallMat);
-            leftWall.position.set(-14, 5.5, 0);
-            orGroup.add(leftWall);
-
-            // 3. Monitor Radiológico PACS en la pared del fondo
-            const pacsFrame = new THREE.Mesh(
-                new THREE.BoxGeometry(6.2, 3.3, 0.25),
-                new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6, roughness: 0.3 })
+            const cyanPanel = new THREE.Mesh(
+                new THREE.BoxGeometry(12, 4.8, 0.15),
+                new THREE.MeshStandardMaterial({ color: 0x0ea5e9, emissive: 0x0284c7, emissiveIntensity: 0.35 })
             );
-            pacsFrame.position.set(6.5, 4.5, -12.15);
-            orGroup.add(pacsFrame);
+            cyanPanel.position.set(-5, 4.2, -12.2);
+            g.add(cyanPanel);
 
-            const pacsScreen = new THREE.Mesh(
-                new THREE.PlaneGeometry(5.8, 2.9),
-                new THREE.MeshBasicMaterial({ map: createPACSRadiologyTexture() })
-            );
-            pacsScreen.position.set(6.5, 4.5, -12.0);
-            orGroup.add(pacsScreen);
+            // Monitor ECG / Radiológico
+            const monFrame = new THREE.Mesh(new THREE.BoxGeometry(6.0, 3.2, 0.25), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
+            monFrame.position.set(5.5, 4.4, -12.15);
+            g.add(monFrame);
+            const monScreen = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 2.8), new THREE.MeshBasicMaterial({ map: createMonitorTexture() }));
+            monScreen.position.set(5.5, 4.4, -12.0);
+            g.add(monScreen);
 
-            // 4. Camilla Quirúrgica con sábana azul texturizada (decorativa en zona periférica)
-            const tableGroup = new THREE.Group();
-            tableGroup.position.set(8.2, 0, -6.8);
+            // Camilla quirúrgica con sábana azul
+            const bed = new THREE.Group();
+            bed.position.set(7.8, 0, -6.8);
+            const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.65, 0.95, 20), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
+            ped.position.y = 0.48;
+            bed.add(ped);
+            const mat = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.35, 4.6), new THREE.MeshStandardMaterial({ map: createDrapeTexture() }));
+            mat.position.y = 1.12;
+            bed.add(mat);
+            g.add(bed);
 
-            const pedestal = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.45, 0.7, 0.95, 24),
-                new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6, roughness: 0.4 })
-            );
-            pedestal.position.y = 0.475;
-            pedestal.castShadow = true;
-            tableGroup.add(pedestal);
-
-            const drapeMat = new THREE.MeshStandardMaterial({
-                map: createSurgicalDrapeTexture(),
-                roughness: 0.65
+            // Lámparas scialíticas dobles en techo
+            const lamps = new THREE.Group();
+            lamps.position.set(2.0, 8.0, -3.0);
+            lamps.add(new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1.6, 16), new THREE.MeshStandardMaterial({ color: 0x475569 })));
+            [-1.5, 1.5].forEach(ox => {
+                const head = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.95, 0.2, 24), new THREE.MeshStandardMaterial({ color: 0xe2e8f0 }));
+                head.position.set(ox, -0.9, 0.3);
+                head.rotation.x = 0.3;
+                lamps.add(head);
+                const lens = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color: 0x7dd3fc }));
+                lens.position.set(ox, -1.01, 0.34);
+                lens.rotation.x = Math.PI / 2 + 0.3;
+                lamps.add(lens);
             });
-            const mattress = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.35, 4.8), drapeMat);
-            mattress.position.y = 1.12;
-            mattress.castShadow = true;
-            tableGroup.add(mattress);
+            g.add(lamps);
 
-            const pillow = new THREE.Mesh(
-                new THREE.BoxGeometry(1.5, 0.18, 0.75),
-                new THREE.MeshStandardMaterial({ color: 0xbae6fd, roughness: 0.5 })
-            );
-            pillow.position.set(0, 1.36, -1.75);
-            tableGroup.add(pillow);
-            orGroup.add(tableGroup);
-
-            // 5. Lámparas Scialíticas Superiores Suspendidas
-            const lampSystem = new THREE.Group();
-            lampSystem.position.set(2.5, 8.2, -3.5);
-
-            const ceilingMount = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.22, 0.22, 1.8, 20),
-                new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7 })
-            );
-            lampSystem.add(ceilingMount);
-
-            [-1.6, 1.6].forEach((offsetX) => {
-                const arm = new THREE.Mesh(
-                    new THREE.BoxGeometry(1.8, 0.12, 0.12),
-                    new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.6 })
-                );
-                arm.position.set(offsetX * 0.5, -0.7, 0);
-                lampSystem.add(arm);
-
-                const head = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.9, 1.05, 0.22, 32),
-                    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.4, roughness: 0.3 })
-                );
-                head.position.set(offsetX, -1.0, 0.4);
-                head.rotation.x = 0.35;
-                lampSystem.add(head);
-
-                const lens = new THREE.Mesh(
-                    new THREE.CircleGeometry(0.82, 32),
-                    new THREE.MeshBasicMaterial({ color: 0x7dd3fc })
-                );
-                lens.position.set(offsetX, -1.12, 0.44);
-                lens.rotation.x = Math.PI / 2 + 0.35;
-                lampSystem.add(lens);
-            });
-            orGroup.add(lampSystem);
-
-            scene.add(orGroup);
+            scene.add(g);
         }
 
         function buildDaVinciArm() {
             robot.root = new THREE.Group();
-            robot.root.position.set(-2.5, 0, 2.5); // Base del carro quirúrgico Da Vinci
+            robot.root.position.set(-2.5, 0, 2.5);
             scene.add(robot.root);
 
-            const darkBase = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35, metalness: 0.65 });
-            const cyanRing = new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x06b6d4, emissiveIntensity: 0.45 });
-            const whiteShell = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.25, metalness: 0.2 });
-            const darkJoint = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.75 });
-            const emeraldTip = new THREE.MeshStandardMaterial({
-                color: 0x6ee7b7,
-                emissive: 0x10b981,
-                emissiveIntensity: 0.75,
-                transparent: true,
-                opacity: 0.92
-            });
+            const darkMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4, metalness: 0.6 });
+            const cyanMat = new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x06b6d4, emissiveIntensity: 0.45 });
+            const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.25, metalness: 0.2 });
+            const tipMat = new THREE.MeshStandardMaterial({ color: 0x34d399, emissive: 0x10b981, emissiveIntensity: 0.75 });
 
-            // Pedestal
-            const baseMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.9, 0.7, 32), darkBase);
-            baseMesh.position.y = 0.35;
-            baseMesh.castShadow = true;
-            robot.root.add(baseMesh);
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.9, 0.7, 24), darkMat);
+            base.position.y = 0.35;
+            robot.root.add(base);
 
-            // Torreta rotatoria
-            robot.turret = new THREE.Group();
-            robot.turret.position.y = 0.7;
-            robot.root.add(robot.turret);
+            const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.2, 24), cyanMat);
+            collar.position.y = 0.8;
+            robot.root.add(collar);
 
-            const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.2, 32), cyanRing);
-            collar.position.y = 0.1;
-            robot.turret.add(collar);
+            const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 2.2, 20), darkMat);
+            mast.position.y = 1.9;
+            robot.root.add(mast);
 
-            const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 2.2, 24), darkJoint);
-            mast.position.y = 1.2;
-            mast.castShadow = true;
-            robot.turret.add(mast);
+            const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.28, 20, 20), whiteMat);
+            shoulder.position.y = 3.0;
+            robot.root.add(shoulder);
 
-            robot.shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.28, 24, 24), whiteShell);
-            robot.shoulder.position.y = 2.3;
-            robot.turret.add(robot.shoulder);
+            const mkSeg = (r1, r2, mat) => {
+                const geo = new THREE.CylinderGeometry(r1, r2, 1, 16);
+                geo.translate(0, 0.5, 0);
+                geo.rotateX(Math.PI / 2);
+                const m = new THREE.Mesh(geo, mat);
+                scene.add(m);
+                return m;
+            };
 
-            // Eslabones articulados con cinemática inversa (IK) en espacio mundial
-            const armGeo = new THREE.CylinderGeometry(0.11, 0.13, 1, 20);
-            armGeo.translate(0, 0.5, 0);
-            armGeo.rotateX(Math.PI / 2);
-            robot.upperArm = new THREE.Mesh(armGeo, whiteShell);
-            robot.upperArm.castShadow = true;
-            scene.add(robot.upperArm);
-
-            robot.elbow = new THREE.Mesh(new THREE.SphereGeometry(0.21, 24, 24), darkJoint);
-            robot.elbow.castShadow = true;
+            robot.upperArm = mkSeg(0.11, 0.13, whiteMat);
+            robot.elbow = new THREE.Mesh(new THREE.SphereGeometry(0.2, 20, 20), darkMat);
             scene.add(robot.elbow);
-
-            const foreGeo = new THREE.CylinderGeometry(0.08, 0.1, 1, 20);
-            foreGeo.translate(0, 0.5, 0);
-            foreGeo.rotateX(Math.PI / 2);
-            robot.forearm = new THREE.Mesh(foreGeo, whiteShell);
-            robot.forearm.castShadow = true;
-            scene.add(robot.forearm);
-
-            robot.wrist = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.35, 20), darkJoint);
+            robot.forearm = mkSeg(0.08, 0.1, whiteMat);
+            robot.wrist = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.3, 16), darkMat);
             scene.add(robot.wrist);
+            robot.shaft = mkSeg(0.045, 0.045, cyanMat);
 
-            const shaftGeo = new THREE.CylinderGeometry(0.045, 0.045, 1, 16);
-            shaftGeo.translate(0, 0.5, 0);
-            shaftGeo.rotateX(Math.PI / 2);
-            robot.shaft = new THREE.Mesh(shaftGeo, cyanRing);
-            scene.add(robot.shaft);
-
-            // Efector final y Pinza EndoWrist en Pi
             robot.effector = new THREE.Group();
+            robot.effector.add(new THREE.Mesh(new THREE.SphereGeometry(0.26, 24, 24), tipMat));
+            const jawGeo = new THREE.BoxGeometry(0.05, 0.26, 0.1);
+            const jawL = new THREE.Mesh(jawGeo, darkMat); jawL.position.set(-0.1, 0.24, 0);
+            const jawR = new THREE.Mesh(jawGeo, darkMat); jawR.position.set(0.1, 0.24, 0);
+            robot.effector.add(jawL, jawR);
             scene.add(robot.effector);
-
-            const tipSphere = new THREE.Mesh(new THREE.SphereGeometry(0.28, 28, 28), emeraldTip);
-            robot.effector.add(tipSphere);
-
-            const tipLight = new THREE.PointLight(0x10b981, 0.9, 4.5);
-            robot.effector.add(tipLight);
-
-            const jawGeo = new THREE.BoxGeometry(0.055, 0.28, 0.11);
-            robot.jawL = new THREE.Mesh(jawGeo, darkJoint);
-            robot.jawL.position.set(-0.11, 0.26, 0);
-            robot.jawR = new THREE.Mesh(jawGeo, darkJoint);
-            robot.jawR.position.set(0.11, 0.26, 0);
-            robot.effector.add(robot.jawL, robot.jawR);
         }
 
         function updateDaVinciIK() {
-            if (!robot.effector) return;
             const endPos = robot.effector.position;
-            const shoulderWorld = new THREE.Vector3(-2.5, 3.0, 2.5);
-
-            robot.turret.rotation.y = Math.atan2(endPos.x - shoulderWorld.x, endPos.z - shoulderWorld.z);
-
+            const shoulderW = new THREE.Vector3(-2.5, 3.0, 2.5);
             const wristPos = new THREE.Vector3(endPos.x, endPos.y + 1.15, endPos.z);
-            const mid = new THREE.Vector3().lerpVectors(shoulderWorld, wristPos, 0.5);
-            const elbowPos = new THREE.Vector3(mid.x, Math.max(shoulderWorld.y + 0.6, mid.y + 1.35), mid.z);
+            const mid = new THREE.Vector3().lerpVectors(shoulderW, wristPos, 0.5);
+            const elbowPos = new THREE.Vector3(mid.x, Math.max(shoulderW.y + 0.6, mid.y + 1.35), mid.z);
 
-            robot.upperArm.position.copy(shoulderWorld);
+            robot.upperArm.position.copy(shoulderW);
             robot.upperArm.lookAt(elbowPos);
-            robot.upperArm.scale.set(1, 1, shoulderWorld.distanceTo(elbowPos));
+            robot.upperArm.scale.set(1, 1, shoulderW.distanceTo(elbowPos));
 
             robot.elbow.position.copy(elbowPos);
 
@@ -1212,91 +1495,61 @@
             robot.shaft.scale.set(1, 1, wristPos.distanceTo(endPos));
         }
 
-        function buildTargetAndGroups() {
+        function buildDynamicGroups() {
             targetGroup = new THREE.Group();
-            scene.add(targetGroup);
-
-            const ringGeo = new THREE.RingGeometry(0.48, 0.64, 32);
-            const ringMat = new THREE.MeshBasicMaterial({ color: 0x34d399, side: THREE.DoubleSide });
-            targetRing = new THREE.Mesh(ringGeo, ringMat);
+            targetRing = new THREE.Mesh(
+                new THREE.RingGeometry(0.48, 0.64, 32),
+                new THREE.MeshBasicMaterial({ color: 0x34d399, side: THREE.DoubleSide })
+            );
             targetRing.rotation.x = -Math.PI / 2;
             targetGroup.add(targetRing);
-
-            const core = new THREE.Mesh(
-                new THREE.SphereGeometry(0.24, 24, 24),
-                new THREE.MeshStandardMaterial({
-                    color: 0x34d399,
-                    emissive: 0x10b981,
-                    emissiveIntensity: 0.9,
-                    transparent: true,
-                    opacity: 0.88
-                })
-            );
-            targetGroup.add(core);
+            targetGroup.add(new THREE.Mesh(
+                new THREE.SphereGeometry(0.24, 20, 20),
+                new THREE.MeshStandardMaterial({ color: 0x34d399, emissive: 0x10b981, emissiveIntensity: 0.9 })
+            ));
+            scene.add(targetGroup);
 
             obstaclesGroup = new THREE.Group();
-            scene.add(obstaclesGroup);
-
             previewGroup = new THREE.Group();
-            scene.add(previewGroup);
-
             trailGroup = new THREE.Group();
-            scene.add(trailGroup);
+            scene.add(obstaclesGroup, previewGroup, trailGroup);
         }
 
-        // =========================================================================
-        // RENDERIZADO DE OBSTÁCULOS Y DETECCIÓN DE COLISIONES EN TIEMPO REAL
-        // =========================================================================
-        function renderLevelObstacles(mission) {
-            while (obstaclesGroup.children.length > 0) {
-                obstaclesGroup.remove(obstaclesGroup.children[0]);
-            }
+        /* =========================================================
+           OBSTÁCULOS, DETECCIÓN DE COLISIONES Y PREVISUALIZACIÓN
+           ========================================================= */
+        function renderObstacles(mission) {
+            while (obstaclesGroup.children.length) obstaclesGroup.remove(obstaclesGroup.children[0]);
             if (!mission || !mission.obstacles) return;
 
-            mission.obstacles.forEach((obs) => {
-                const wMin = mathToWorld(obs.min);
-                const wMax = mathToWorld(obs.max);
+            mission.obstacles.forEach(obs => {
+                const w1 = mathToWorld(obs.min);
+                const w2 = mathToWorld(obs.max);
+                const geo = new THREE.BoxGeometry(Math.abs(w2.x - w1.x), Math.abs(w2.y - w1.y), Math.abs(w2.z - w1.z));
+                const center = new THREE.Vector3((w1.x + w2.x) / 2, (w1.y + w2.y) / 2, (w1.z + w2.z) / 2);
 
-                const sizeX = Math.abs(wMax.x - wMin.x);
-                const sizeY = Math.abs(wMax.y - wMin.y);
-                const sizeZ = Math.abs(wMax.z - wMin.z);
-
-                const center = new THREE.Vector3(
-                    (wMin.x + wMax.x) / 2,
-                    (wMin.y + wMax.y) / 2,
-                    (wMin.z + wMax.z) / 2
-                );
-
-                const geo = new THREE.BoxGeometry(sizeX, sizeY, sizeZ);
-                const mat = new THREE.MeshStandardMaterial({
-                    color: obs.color || 0xf43f5e,
-                    emissive: obs.color || 0xe11d48,
+                const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+                    color: obs.isCeiling ? 0x38bdf8 : 0xf43f5e,
+                    emissive: obs.isCeiling ? 0x0284c7 : 0xe11d48,
                     emissiveIntensity: 0.25,
                     transparent: true,
-                    opacity: obs.isCeiling ? 0.22 : 0.68,
-                    roughness: 0.35
-                });
-                const mesh = new THREE.Mesh(geo, mat);
+                    opacity: obs.isCeiling ? 0.22 : 0.68
+                }));
                 mesh.position.copy(center);
-                mesh.castShadow = !obs.isCeiling;
                 obstaclesGroup.add(mesh);
 
-                // Borde wireframe para lectura exacta de límites
-                const edges = new THREE.EdgesGeometry(geo);
-                const line = new THREE.LineSegments(
-                    edges,
-                    new THREE.LineBasicMaterial({ color: obs.isCeiling ? 0x38bdf8 : 0xfda4af })
+                const edges = new THREE.LineSegments(
+                    new THREE.EdgesGeometry(geo),
+                    new THREE.LineBasicMaterial({ color: obs.isCeiling ? 0x7dd3fc : 0xfda4af })
                 );
-                line.position.copy(center);
-                obstaclesGroup.add(line);
+                edges.position.copy(center);
+                obstaclesGroup.add(edges);
             });
         }
 
-        // Evalúa si el segmento p1 -> p2 interseca algún obstáculo o excede perímetro
-        function detectTrajectoryCollision(p1, p2, mission) {
+        function checkCollision(p1, p2, mission) {
             const steps = 45;
             const ceiling = (mission && mission.ceilingZ) ? mission.ceilingZ : 6.5;
-
             for (let i = 1; i <= steps; i++) {
                 const t = i / steps;
                 const pt = {
@@ -1304,757 +1557,514 @@
                     y: p1.y + (p2.y - p1.y) * t,
                     z: p1.z + (p2.z - p1.z) * t
                 };
-
-                // Perímetro quirúrgico o suelo
                 if (Math.abs(pt.x) > ARENA_LIMIT || Math.abs(pt.y) > ARENA_LIMIT || pt.z < -0.4 || pt.z > ceiling) {
                     return {
-                        collided: true,
-                        reason: pt.z > ceiling
-                            ? `Techo quirúrgico excedido (Z > ${ceiling})`
-                            : (pt.z < -0.4 ? 'Colisión con mesa quirúrgica (Z < 0)' : 'Perímetro estéril excedido'),
-                        point: {
-                            x: Math.round(pt.x * 10) / 10,
-                            y: Math.round(pt.y * 10) / 10,
-                            z: Math.round(pt.z * 10) / 10
-                        }
+                        hit: true,
+                        reason: pt.z > ceiling ? `Techo excedido (Z > ${ceiling})` : 'Perímetro estéril excedido',
+                        pt: { x: +pt.x.toFixed(1), y: +pt.y.toFixed(1), z: +pt.z.toFixed(1) }
                     };
                 }
-
-                // Obstáculos físicos del nivel
                 if (mission && mission.obstacles) {
                     for (const obs of mission.obstacles) {
                         const pad = 0.12;
-                        if (
-                            pt.x >= obs.min.x - pad && pt.x <= obs.max.x + pad &&
+                        if (pt.x >= obs.min.x - pad && pt.x <= obs.max.x + pad &&
                             pt.y >= obs.min.y - pad && pt.y <= obs.max.y + pad &&
-                            pt.z >= obs.min.z - pad && pt.z <= obs.max.z + pad
-                        ) {
+                            pt.z >= obs.min.z - pad && pt.z <= obs.max.z + pad) {
                             return {
-                                collided: true,
+                                hit: true,
                                 reason: `Impacto con ${obs.name}`,
-                                point: {
-                                    x: Math.round(pt.x * 10) / 10,
-                                    y: Math.round(pt.y * 10) / 10,
-                                    z: Math.round(pt.z * 10) / 10
-                                }
+                                pt: { x: +pt.x.toFixed(1), y: +pt.y.toFixed(1), z: +pt.z.toFixed(1) }
                             };
                         }
                     }
                 }
             }
-            return { collided: false };
+            return { hit: false };
         }
 
-        // Previsualización holográfica en tiempo real (flecha 3D + proyecciones ΔX, ΔY, ΔZ)
-        function updateHolographicPreview() {
-            if (!previewGroup) return;
-            while (previewGroup.children.length > 0) {
-                previewGroup.remove(previewGroup.children[0]);
-            }
+        function updatePreview() {
+            while (previewGroup.children.length) previewGroup.remove(previewGroup.children[0]);
 
-            const vx = parseFloat(document.getElementById('input-x').value) || 0;
-            const vy = parseFloat(document.getElementById('input-y').value) || 0;
-            const vz = parseFloat(document.getElementById('input-z').value) || 0;
-
+            const vx = parseFloat(document.getElementById('inp-x').value) || 0;
+            const vy = parseFloat(document.getElementById('inp-y').value) || 0;
+            const vz = parseFloat(document.getElementById('inp-z').value) || 0;
             const mag = Math.hypot(vx, vy, vz);
-            const angleXY = Math.atan2(vy, vx) * 180 / Math.PI;
-            const dest = {
-                x: Math.round((currentPi.x + vx) * 10) / 10,
-                y: Math.round((currentPi.y + vy) * 10) / 10,
-                z: Math.round((currentPi.z + vz) * 10) / 10
-            };
+            const ang = mag > 0.01 ? (Math.atan2(vy, vx) * 180 / Math.PI) : 0;
 
-            document.getElementById('calc-mag').textContent = mag.toFixed(2);
-            document.getElementById('calc-angle').textContent = (mag > 0.001 ? angleXY.toFixed(1) : '0.0') + '°';
-            document.getElementById('calc-dest').textContent = `(${dest.x.toFixed(1)}, ${dest.y.toFixed(1)}, ${dest.z.toFixed(1)})`;
+            document.getElementById('val-mag').textContent = mag.toFixed(2);
+            document.getElementById('val-ang').textContent = ang.toFixed(1) + '°';
 
-            const badge = document.getElementById('console-collision-tag');
-            const routeStatus = document.getElementById('hud-route-status');
+            const statusEl = document.getElementById('console-status');
             const labelPrev = document.getElementById('label-preview');
 
             if (mag < 0.01) {
-                badge.textContent = 'EN ESPERA';
-                badge.className = 'text-[10px] font-mono-code uppercase px-2.5 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-600';
-                routeStatus.textContent = 'EN ESPERA';
-                routeStatus.className = 'text-slate-300 font-bold';
+                statusEl.textContent = 'EN ESPERA';
+                statusEl.style.color = '#94a3b8';
+                statusEl.style.borderColor = 'rgba(148,163,184,0.3)';
+                statusEl.style.background = 'rgba(15,23,42,0.8)';
                 labelPrev.classList.add('hidden');
                 return;
             }
 
-            const mission = state.freePractice ? null : state.missions.find(m => m.id === state.currentMissionId);
-            const collisionInfo = detectTrajectoryCollision(currentPi, dest, mission);
-            const distToTarget = Math.hypot(dest.x - currentPf.x, dest.y - currentPf.y, dest.z - currentPf.z);
+            const dest = {
+                x: +(currentPi.x + vx).toFixed(1),
+                y: +(currentPi.y + vy).toFixed(1),
+                z: +(currentPi.z + vz).toFixed(1)
+            };
 
-            let arrowColor = 0x22d3ee; // Cian holográfico por defecto
-            if (collisionInfo.collided) {
-                arrowColor = 0xf43f5e; // ROJO por colisión
-                badge.textContent = `⚠️ COLISIÓN EN (${collisionInfo.point.x}, ${collisionInfo.point.y}, ${collisionInfo.point.z})`;
-                badge.className = 'text-[10px] font-mono-code uppercase px-2.5 py-0.5 rounded-md bg-rose-500/25 text-rose-300 border border-rose-500 font-bold animate-pulse';
-                routeStatus.textContent = 'OBSTRUIDA';
-                routeStatus.className = 'text-rose-400 font-bold';
-            } else if (distToTarget < 0.15) {
-                arrowColor = 0x34d399; // Esmeralda si conecta con Pf
-                badge.textContent = '✔ CONECTA CON Pᶠ';
-                badge.className = 'text-[10px] font-mono-code uppercase px-2.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 font-bold';
-                routeStatus.textContent = 'ÓPTIMA';
-                routeStatus.className = 'text-emerald-400 font-bold';
+            const mission = state.freeMode ? null : state.missions.find(m => m.id === state.currentId);
+            const col = checkCollision(currentPi, dest, mission);
+            const distGoal = Math.hypot(dest.x - currentPf.x, dest.y - currentPf.y, dest.z - currentPf.z);
+
+            let color = 0x22d3ee;
+            if (col.hit) {
+                color = 0xf43f5e;
+                statusEl.textContent = '¡COLISIÓN DETECTADA! Reinicio si aplicas';
+                statusEl.style.color = '#fda4af';
+                statusEl.style.borderColor = '#f43f5e';
+                statusEl.style.background = 'rgba(244,63,94,0.25)';
+            } else if (distGoal <= TOLERANCE) {
+                color = 0x34d399;
+                statusEl.textContent = '✔ CONECTA CON Pᶠ';
+                statusEl.style.color = '#34d399';
+                statusEl.style.borderColor = '#10b981';
+                statusEl.style.background = 'rgba(16,185,129,0.22)';
             } else {
-                badge.textContent = 'TRAYECTORIA LIBRE';
-                badge.className = 'text-[10px] font-mono-code uppercase px-2.5 py-0.5 rounded-md bg-cyan-500/15 text-cyan-300 border border-cyan-400/35';
-                routeStatus.textContent = 'DESPEJADA';
-                routeStatus.className = 'text-cyan-300 font-bold';
+                statusEl.textContent = 'TRAYECTORIA LIBRE';
+                statusEl.style.color = '#38bdf8';
+                statusEl.style.borderColor = 'rgba(56,189,248,0.45)';
+                statusEl.style.background = 'rgba(56,189,248,0.15)';
             }
 
-            const startW = mathToWorld(currentPi);
-            const endW = mathToWorld(dest);
-            const deltaW = new THREE.Vector3().subVectors(endW, startW);
+            const wStart = mathToWorld(currentPi);
+            const wEnd = mathToWorld(dest);
+            const delta = new THREE.Vector3().subVectors(wEnd, wStart);
 
-            // Flecha 3D principal
-            const mainArrow = new THREE.ArrowHelper(
-                deltaW.clone().normalize(),
-                startW,
-                deltaW.length(),
-                arrowColor,
-                Math.min(0.55, deltaW.length() * 0.3),
-                0.28
-            );
-            previewGroup.add(mainArrow);
+            previewGroup.add(new THREE.ArrowHelper(delta.clone().normalize(), wStart, delta.length(), color, Math.min(0.5, delta.length() * 0.3), 0.25));
 
-            // Esfera destino proyectado
-            const ghost = new THREE.Mesh(
-                new THREE.SphereGeometry(0.2, 16, 16),
-                new THREE.MeshBasicMaterial({ color: arrowColor, wireframe: true })
-            );
-            ghost.position.copy(endW);
-            previewGroup.add(ghost);
-
-            // Marcador rojo en el punto exacto de impacto si hay colisión
-            if (collisionInfo.collided) {
-                const hitWorld = mathToWorld(collisionInfo.point);
-                const hitSphere = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.28, 20, 20),
-                    new THREE.MeshBasicMaterial({ color: 0xf43f5e })
+            // Proyecciones ortogonales ΔX (rojo), ΔY (azul), ΔZ (verde)
+            const pX = mathToWorld({ x: dest.x, y: currentPi.y, z: currentPi.z });
+            const pXY = mathToWorld({ x: dest.x, y: dest.y, z: currentPi.z });
+            const mkDash = (a, b, c) => {
+                const l = new THREE.Line(
+                    new THREE.BufferGeometry().setFromPoints([a, b]),
+                    new THREE.LineDashedMaterial({ color: c, dashSize: 0.22, gapSize: 0.14 })
                 );
-                hitSphere.position.copy(hitWorld);
-                previewGroup.add(hitSphere);
-            }
+                l.computeLineDistances();
+                return l;
+            };
+            if (Math.abs(vx) > 0.01) previewGroup.add(mkDash(wStart, pX, 0xf43f5e));
+            if (Math.abs(vy) > 0.01) previewGroup.add(mkDash(pX, pXY, 0x38bdf8));
+            if (Math.abs(vz) > 0.01) previewGroup.add(mkDash(pXY, wEnd, 0x34d399));
 
-            // Proyecciones ortogonales punteadas ΔX (rojo), ΔY (azul), ΔZ (verde)
-            if (state.showGuides) {
-                const pX = mathToWorld({ x: dest.x, y: currentPi.y, z: currentPi.z });
-                const pXY = mathToWorld({ x: dest.x, y: dest.y, z: currentPi.z });
-
-                if (Math.abs(vx) > 0.01) previewGroup.add(createDashedSegment(startW, pX, 0xf43f5e));
-                if (Math.abs(vy) > 0.01) previewGroup.add(createDashedSegment(pX, pXY, 0x38bdf8));
-                if (Math.abs(vz) > 0.01) previewGroup.add(createDashedSegment(pXY, endW, 0x34d399));
+            if (col.hit) {
+                const hitDot = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 16), new THREE.MeshBasicMaterial({ color: 0xf43f5e }));
+                hitDot.position.copy(mathToWorld(col.pt));
+                previewGroup.add(hitDot);
             }
 
             labelPrev.classList.remove('hidden');
-            labelPrev.textContent = collisionInfo.collided
-                ? `⚠️ Impacto (${collisionInfo.point.x}, ${collisionInfo.point.y}, ${collisionInfo.point.z})`
-                : `(${dest.x}, ${dest.y}, ${dest.z}) | |V|=${mag.toFixed(2)}u`;
+            labelPrev.textContent = col.hit ? `⚠️ Impacto (${col.pt.x}, ${col.pt.y}, ${col.pt.z})` : `Destino (${dest.x}, ${dest.y}, ${dest.z})`;
         }
 
-        function createDashedSegment(p1, p2, colorHex) {
-            const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-            const mat = new THREE.LineDashedMaterial({
-                color: colorHex,
-                dashSize: 0.25,
-                gapSize: 0.15
-            });
-            const line = new THREE.Line(geo, mat);
-            line.computeLineDistances();
-            return line;
-        }
-
-        // =========================================================================
-        // APLICACIÓN DEL VECTOR, COLISIONES Y REINICIO AUTOMÁTICO
-        // =========================================================================
+        /* =========================================================
+           EJECUCIÓN DEL VECTOR, REINICIO Y VALIDACIÓN
+           ========================================================= */
         function applyVector() {
             if (state.isAnimating) return;
 
-            const vx = parseFloat(document.getElementById('input-x').value) || 0;
-            const vy = parseFloat(document.getElementById('input-y').value) || 0;
-            const vz = parseFloat(document.getElementById('input-z').value) || 0;
-            const mag = Math.hypot(vx, vy, vz);
-
-            if (mag < 0.01) {
-                showToast('⚠️ Vector Nulo (0, 0, 0)', 'Ingresa valores distintos de cero en X, Y o Z para generar un desplazamiento.', 'warning', false);
+            const vx = parseFloat(document.getElementById('inp-x').value) || 0;
+            const vy = parseFloat(document.getElementById('inp-y').value) || 0;
+            const vz = parseFloat(document.getElementById('inp-z').value) || 0;
+            if (Math.hypot(vx, vy, vz) < 0.01) {
+                showToast('Vector Nulo', 'Ingresa valores distintos de cero en X, Y o Z.', 'warn');
                 return;
             }
 
-            const mission = state.freePractice ? null : state.missions.find(m => m.id === state.currentMissionId);
+            const mission = state.freeMode ? null : state.missions.find(m => m.id === state.currentId);
             const dest = {
-                x: Math.round((currentPi.x + vx) * 10) / 10,
-                y: Math.round((currentPi.y + vy) * 10) / 10,
-                z: Math.round((currentPi.z + vz) * 10) / 10
+                x: +(currentPi.x + vx).toFixed(1),
+                y: +(currentPi.y + vy).toFixed(1),
+                z: +(currentPi.z + vz).toFixed(1)
             };
 
-            const collisionCheck = detectTrajectoryCollision(currentPi, dest, mission);
-
-            // Si hay colisión, animar hasta el punto de impacto, activar alerta roja y reiniciar nivel
-            if (collisionCheck.collided) {
-                const hitWorld = mathToWorld(collisionCheck.point);
+            const col = checkCollision(currentPi, dest, mission);
+            if (col.hit) {
                 state.isAnimating = true;
-                new TWEEN.Tween(robot.effector.position)
-                    .to({ x: hitWorld.x, y: hitWorld.y, z: hitWorld.z }, 650)
-                    .easing(TWEEN.Easing.Quadratic.In)
-                    .onComplete(() => {
-                        state.isAnimating = false;
-                        triggerCollisionReset(
-                            `🚨 ¡COLISIÓN DETECTADA EN (${collisionCheck.point.x}, ${collisionCheck.point.y}, ${collisionCheck.point.z})!`,
-                            `${collisionCheck.reason}. El protocolo de seguridad Da Vinci ha reiniciado el nivel al punto inicial Pᵢ.`
-                        );
-                    })
-                    .start();
+                const hitW = mathToWorld(col.pt);
+                runTween(robot.effector.position, hitW, 550, null, () => {
+                    state.isAnimating = false;
+                    triggerReset(`🚨 ¡COLISIÓN DETECTADA!`, `${col.reason} en (${col.pt.x}, ${col.pt.y}, ${col.pt.z}). Reiniciando nivel a Pᵢ...`);
+                });
                 return;
             }
 
-            // Trayectoria libre: dibujar rastro permanente y mover brazo Da Vinci
-            const startW = mathToWorld(currentPi);
-            const endW = mathToWorld(dest);
-            const deltaW = new THREE.Vector3().subVectors(endW, startW);
-            const trailArrow = new THREE.ArrowHelper(deltaW.clone().normalize(), startW, deltaW.length(), 0x2dd4bf, 0.38, 0.2);
-            trailGroup.add(trailArrow);
+            const wStart = mathToWorld(currentPi);
+            const wEnd = mathToWorld(dest);
+            const delta = new THREE.Vector3().subVectors(wEnd, wStart);
+            trailGroup.add(new THREE.ArrowHelper(delta.clone().normalize(), wStart, delta.length(), 0x10b981, 0.35, 0.18));
 
             state.isAnimating = true;
-            new TWEEN.Tween(robot.effector.position)
-                .to({ x: endW.x, y: endW.y, z: endW.z }, 1050)
-                .easing(TWEEN.Easing.Cubic.InOut)
-                .onUpdate(() => {
-                    const live = worldToMath(robot.effector.position);
-                    document.getElementById('tel-pi').textContent = `(${live.x.toFixed(1)}, ${live.y.toFixed(1)}, ${live.z.toFixed(1)})`;
-                })
-                .onComplete(() => {
-                    state.isAnimating = false;
-                    currentPi = { ...dest };
-                    state.energyUsed += mag * 1.4;
-                    if (!state.freePractice) {
-                        state.vectorsRemaining = Math.max(0, state.vectorsRemaining - 1);
-                    }
+            runTween(robot.effector.position, wEnd, 900, () => {
+                const live = worldToMath(robot.effector.position);
+                document.getElementById('tel-pi').textContent = `(${live.x.toFixed(1)}, ${live.y.toFixed(1)}, ${live.z.toFixed(1)})`;
+            }, () => {
+                state.isAnimating = false;
+                currentPi = { ...dest };
+                if (!state.freeMode) state.vectorsLeft = Math.max(0, state.vectorsLeft - 1);
 
-                    document.getElementById('input-x').value = 0;
-                    document.getElementById('input-y').value = 0;
-                    document.getElementById('input-z').value = 0;
+                document.getElementById('inp-x').value = 0;
+                document.getElementById('inp-y').value = 0;
+                document.getElementById('inp-z').value = 0;
+                updateTelemetry();
+                updatePreview();
 
-                    updateTelemetryPanel();
-                    updateHolographicPreview();
-
-                    const distToGoal = Math.hypot(currentPf.x - currentPi.x, currentPf.y - currentPi.y, currentPf.z - currentPi.z);
-
-                    if (distToGoal < 0.15) {
-                        // ¡Objetivo alcanzado!
-                        if (state.freePractice) {
-                            showToast(
-                                '🎯 ¡Objetivo Alcanzado en Quirófano Libre!',
-                                `Vector ejecutado: V = (${vx}, ${vy}, ${vz}) | Energía total: ${state.energyUsed.toFixed(2)} kJ. Genera un nuevo objetivo o vuelve al Hub.`,
-                                'success',
-                                true
-                            );
-                            // Generar nuevo objetivo aleatorio en práctica libre
-                            currentPf = {
-                                x: Math.floor(Math.random() * 11) - 4,
-                                y: Math.floor(Math.random() * 9) - 2,
-                                z: Math.floor(Math.random() * 4)
-                            };
-                            targetGroup.position.copy(mathToWorld(currentPf));
-                            updateTelemetryPanel();
-                        } else {
-                            if (!mission.completed) {
-                                mission.completed = true;
-                                state.score += mission.points;
-                                state.skillPoints += mission.skillReward;
-                            }
-                            renderHub();
-                            showToast(
-                                `🎉 ¡Cirugía de ${mission.patient} Completada!`,
-                                `Vector final: <strong>V = (${vx}, ${vy}, ${vz})</strong> | Energía: <strong>${state.energyUsed.toFixed(2)} kJ</strong>.<br><span class="text-emerald-300 block mt-1">${mission.implicitGuide}</span><span class="text-amber-300 font-mono-code block mt-1">+${mission.points} pts | +${mission.skillReward} pt(s) de habilidad</span>`,
-                                'success',
-                                true
-                            );
-                        }
-                    } else if (!state.freePractice && state.vectorsRemaining <= 0) {
-                        // Agotó el presupuesto de vectores sin llegar a Pf -> Reinicio automático
-                        triggerCollisionReset(
-                            '⚠️ ¡PRESUPUESTO DE VECTORES AGOTADO!',
-                            `La pinza quedó en (${currentPi.x}, ${currentPi.y}, ${currentPi.z}) a ${distToGoal.toFixed(2)} u de Pᶠ y no quedan vectores disponibles. Reiniciando nivel a Pᵢ...`
-                        );
+                const dist = Math.hypot(currentPf.x - currentPi.x, currentPf.y - currentPi.y, currentPf.z - currentPi.z);
+                if (dist <= TOLERANCE) {
+                    if (state.freeMode) {
+                        showToast('🎯 ¡Objetivo Alcanzado!', 'Generando nuevo objetivo aleatorio en el quirófano libre.', 'ok');
+                        currentPf = {
+                            x: Math.floor(Math.random() * 10) - 4,
+                            y: Math.floor(Math.random() * 8) - 2,
+                            z: Math.floor(Math.random() * 4)
+                        };
+                        targetGroup.position.copy(mathToWorld(currentPf));
+                        updateTelemetry();
                     } else {
-                        // Tramo intermedio completado
-                        const remX = Math.round((currentPf.x - currentPi.x) * 10) / 10;
-                        const remY = Math.round((currentPf.y - currentPi.y) * 10) / 10;
-                        const remZ = Math.round((currentPf.z - currentPi.z) * 10) / 10;
-                        showToast(
-                            `✔ Tramo Ejecutado → Pᵢ(${currentPi.x}, ${currentPi.y}, ${currentPi.z})`,
-                            `Te quedan <strong>${state.vectorsRemaining}</strong> vector(es). Para completar la suma vectorial hacia Pᶠ(${currentPf.x}, ${currentPf.y}, ${currentPf.z}), calcula el vector restante.`,
-                            'info',
-                            false
-                        );
+                        if (!mission.completed) {
+                            mission.completed = true;
+                            state.score += mission.points;
+                            state.skillPoints += mission.skillReward;
+                        }
+                        renderHub();
+                        document.getElementById('comp-title').textContent = `¡Cirugía de ${mission.patient} Completada!`;
+                        document.getElementById('comp-desc').textContent = mission.implicit;
+                        document.getElementById('comp-rewards').textContent = `+${mission.points} pts  |  +${mission.skillReward} pt(s) de habilidad`;
+                        document.getElementById('modal-complete').classList.remove('hidden');
                     }
-                })
-                .start();
+                } else if (!state.freeMode && state.vectorsLeft <= 0) {
+                    triggerReset('⚠️ ¡VECTORES AGOTADOS!', `Quedaste a ${dist.toFixed(2)} u del objetivo sin movimientos restantes. Reiniciando nivel a Pᵢ...`);
+                } else {
+                    showToast('✔ Tramo Ejecutado', `Nueva posición Pᵢ(${currentPi.x}, ${currentPi.y}, ${currentPi.z}). Calcula el siguiente vector hacia Pᶠ.`, 'info');
+                }
+            });
         }
 
-        function triggerCollisionReset(title, message) {
+        function triggerReset(title, msg) {
             state.collisions++;
             renderHub();
-
-            const overlay = document.getElementById('collision-overlay');
-            overlay.classList.remove('collision-flash');
-            void overlay.offsetWidth;
-            overlay.classList.add('collision-flash');
-
-            showToast(title, message, 'error', false);
+            const flash = document.getElementById('collision-flash-layer');
+            flash.classList.remove('flash-active');
+            void flash.offsetWidth;
+            flash.classList.add('flash-active');
+            showToast(title, msg, 'err');
 
             setTimeout(() => {
                 if (!document.getElementById('hud-3d').classList.contains('hidden')) {
-                    if (state.freePractice) {
-                        startFreePractice(true);
-                    } else {
-                        startMission(state.currentMissionId, true);
-                    }
+                    if (state.freeMode) startFreeMode(true);
+                    else startMission(state.currentId, true);
                 }
-            }, 2200);
+            }, 1900);
         }
 
-        // =========================================================================
-        // GESTIÓN DE INTERFAZ: HUB, HABILIDADES, FICHA CLÍNICA Y TELEMETRÍA
-        // =========================================================================
+        /* =========================================================
+           RENDERIZADO DE INTERFAZ (HUB, HABILIDADES, HUD, MODALES)
+           ========================================================= */
         function renderHub() {
-            const completedCount = state.missions.filter(m => m.completed).length;
-            document.getElementById('hub-score').textContent = state.score;
-            document.getElementById('hub-completed').textContent = `${completedCount}/10`;
-            document.getElementById('hub-skill-points').textContent = state.skillPoints;
-            document.getElementById('hub-collisions').textContent = state.collisions;
-            document.getElementById('badge-skill-pts').textContent = `${state.skillPoints} pt(s)`;
+            const done = state.missions.filter(m => m.completed).length;
+            document.getElementById('stat-score').textContent = state.score;
+            document.getElementById('stat-completed').textContent = `${done}/10`;
+            document.getElementById('stat-points').textContent = state.skillPoints;
+            document.getElementById('stat-collisions').textContent = state.collisions;
+            document.getElementById('hub-pts-badge').textContent = `${state.skillPoints} pt`;
 
             const grid = document.getElementById('missions-grid');
             grid.innerHTML = '';
-
-            state.missions.forEach((m) => {
+            state.missions.forEach(m => {
                 const card = document.createElement('div');
-                card.className = 'card-surgical rounded-2xl p-4 cursor-pointer flex flex-col justify-between min-h-[168px]';
+                card.className = 'mission-card' + (m.completed ? ' completed' : '');
                 card.innerHTML = `
                     <div>
-                        <div class="flex justify-between items-center mb-1.5">
-                            <span class="text-xl font-black text-cyan-400 font-mono-code">#${m.id}</span>
-                            <span class="text-[10px] font-mono-code px-2 py-0.5 rounded bg-slate-950/90 text-emerald-300 border border-emerald-500/30">
-                                ${m.maxVectors} vec. máx
-                            </span>
+                        <div class="mission-top">
+                            <span class="mission-num">#${m.id}</span>
+                            <span class="mission-budget">${m.maxVectors} vec. máx.</span>
                         </div>
-                        <h3 class="text-sm sm:text-base font-extrabold text-white leading-tight">${m.patient}</h3>
-                        <p class="text-xs text-slate-300 mt-1 leading-snug">${m.title}</p>
-                        <p class="text-[11px] text-cyan-300/85 font-mono-code mt-2 leading-tight">${m.concept}</p>
+                        <div class="mission-patient">${m.patient}</div>
+                        <div class="mission-diag">${m.diag}</div>
+                        <div class="mission-concept">${m.concept}</div>
                     </div>
-                    <div class="mt-3 pt-2 border-t border-slate-800/90 flex justify-between items-center text-[11px]">
-                        <span class="font-extrabold uppercase ${m.completed ? 'text-emerald-400' : 'text-amber-300'}">
-                            ${m.completed ? '✔ COMPLETADA' : '▶ OPERAR'}
+                    <div class="mission-footer">
+                        <span style="color: ${m.completed ? 'var(--emerald-bright)' : 'var(--amber)'};">
+                            ${m.completed ? '✔ COMPLETADA' : '▶ INICIAR'}
                         </span>
-                        <span class="text-slate-400 font-mono-code">+${m.points} pts</span>
+                        <span class="mono" style="color: var(--text-muted);">+${m.points} pts</span>
                     </div>
                 `;
-                card.addEventListener('click', () => startMission(m.id, false));
+                card.onclick = () => startMission(m.id, false);
                 grid.appendChild(card);
             });
         }
 
         function renderSkills() {
-            document.getElementById('skills-available-pts').textContent = state.demoMode ? '∞ (Demo)' : state.skillPoints;
+            document.getElementById('skills-pts-val').textContent = state.skillPoints;
             const grid = document.getElementById('skills-grid');
             grid.innerHTML = '';
-
-            state.skills.forEach((sk) => {
-                const unlocked = sk.unlocked || state.demoMode;
-                const canBuy = state.skillPoints >= sk.cost || state.demoMode;
-
+            state.skills.forEach(sk => {
+                const canBuy = state.skillPoints >= sk.cost;
                 const card = document.createElement('div');
-                card.className = `${unlocked ? 'card-surgical' : 'card-locked'} rounded-2xl p-5 flex flex-col justify-between cursor-pointer`;
+                card.className = 'skill-card' + (sk.unlocked ? ' unlocked' : '');
                 card.innerHTML = `
                     <div>
-                        <div class="flex justify-between items-start gap-2">
-                            <h3 class="text-base sm:text-lg font-extrabold text-white">${sk.name}</h3>
-                            <span class="text-xs font-mono-code px-2.5 py-0.5 rounded-full ${unlocked ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'}">
-                                Costo: ${sk.cost} pt(s)
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <strong style="font-size:15px; color:#fff;">${sk.name}</strong>
+                            <span class="pill-badge" style="${sk.unlocked ? '' : 'background:rgba(251,191,36,0.18); color:#fbbf24; border-color:rgba(251,191,36,0.4);'}">
+                                ${sk.cost} pt(s)
                             </span>
                         </div>
-                        <p class="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">${sk.desc}</p>
+                        <p style="font-size:12.5px; color:var(--text-muted); margin-top:6px; line-height:1.4;">${sk.desc}</p>
                     </div>
-                    <div class="mt-4 pt-2 border-t border-slate-800/80 flex justify-between items-center">
-                        <span class="text-xs font-extrabold uppercase tracking-wider ${unlocked ? 'text-emerald-400' : (canBuy ? 'text-cyan-300' : 'text-slate-500')}">
-                            ${unlocked ? '✔ DESBLOQUEADA' : (canBuy ? '🔓 CLIC PARA DESBLOQUEAR' : '🔒 PUNTOS INSUFICIENTES')}
-                        </span>
+                    <div style="font-size:11.5px; font-weight:800; color:${sk.unlocked ? 'var(--emerald-bright)' : (canBuy ? 'var(--cyan)' : '#64748b')};">
+                        ${sk.unlocked ? '✔ DESBLOQUEADA' : (canBuy ? '🔓 TOCA PARA DESBLOQUEAR' : '🔒 PUNTOS INSUFICIENTES')}
                     </div>
                 `;
-                card.addEventListener('click', () => {
-                    if (unlocked) return;
-                    if (state.skillPoints >= sk.cost) {
+                card.onclick = () => {
+                    if (!sk.unlocked && state.skillPoints >= sk.cost) {
                         state.skillPoints -= sk.cost;
                         sk.unlocked = true;
                         renderSkills();
                         renderHub();
                     }
-                });
+                };
                 grid.appendChild(card);
             });
         }
 
-        function startMission(missionId, skipBriefingModal = false) {
-            state.freePractice = false;
-            state.currentMissionId = missionId;
-            const mission = state.missions.find(m => m.id === missionId);
-            if (!mission) return;
+        function startMission(id, skipModal) {
+            state.freeMode = false;
+            state.currentId = id;
+            const m = state.missions.find(x => x.id === id);
+            currentPi = { ...m.start };
+            currentPf = { ...m.target };
+            state.maxVectors = m.maxVectors;
+            state.vectorsLeft = m.maxVectors;
 
-            currentPi = { ...mission.start };
-            currentPf = { ...mission.target };
-            state.maxVectors = mission.maxVectors;
-            state.vectorsRemaining = mission.maxVectors;
-            state.energyUsed = 0;
-
-            showSimulationScreen();
+            enter3DView();
             robot.effector.position.copy(mathToWorld(currentPi));
             targetGroup.position.copy(mathToWorld(currentPf));
-            renderLevelObstacles(mission);
-            clearTrailsAndInputs();
+            renderObstacles(m);
+            clearInputsAndTrails();
 
-            // Llenar Ficha Clínica y Guía Desplegable
-            const badgeText = `PACIENTE #${mission.id} • CIRUGÍA VECTORIAL`;
-            const fullTitle = `${mission.patient} — ${mission.title}`;
+            const badge = `PACIENTE #${m.id}`;
+            const title = `${m.patient} — ${m.diag}`;
 
-            document.getElementById('briefing-badge').textContent = badgeText;
-            document.getElementById('briefing-concept').textContent = mission.concept;
-            document.getElementById('briefing-title').textContent = fullTitle;
-            document.getElementById('briefing-quote').textContent = mission.quote;
-            document.getElementById('briefing-goal').textContent = mission.goal;
-            document.getElementById('briefing-pi').textContent = `(${currentPi.x}, ${currentPi.y}, ${currentPi.z})`;
-            document.getElementById('briefing-pf').textContent = `(${currentPf.x}, ${currentPf.y}, ${currentPf.z})`;
-            document.getElementById('briefing-budget').textContent = `${mission.maxVectors} vector(es) máx.`;
-            document.getElementById('briefing-implicit').innerHTML = `💡 <strong>Guía Implícita:</strong> ${mission.implicitGuide}`;
+            document.getElementById('brief-badge').textContent = badge;
+            document.getElementById('brief-concept').textContent = m.concept;
+            document.getElementById('brief-title').textContent = title;
+            document.getElementById('brief-quote').textContent = m.quote;
+            document.getElementById('brief-goal').textContent = `🎯 ${m.goal}`;
+            document.getElementById('brief-pi').textContent = `(${currentPi.x}, ${currentPi.y}, ${currentPi.z})`;
+            document.getElementById('brief-pf').textContent = `(${currentPf.x}, ${currentPf.y}, ${currentPf.z})`;
+            document.getElementById('brief-limit').textContent = `${m.maxVectors} vec. máx.`;
+            document.getElementById('brief-implicit').innerHTML = `💡 <strong>Guía Implícita:</strong> ${m.implicit}`;
 
-            const obsAlert = document.getElementById('briefing-obstacle-alert');
-            if (mission.obstacleText) {
-                obsAlert.textContent = `⚠️ Obstáculos activos: ${mission.obstacleText}`;
-                obsAlert.classList.remove('hidden');
-            } else {
-                obsAlert.classList.add('hidden');
-            }
+            const obsEl = document.getElementById('brief-obstacle');
+            if (m.obstacleMsg) { obsEl.textContent = `⚠️ Obstáculos: ${m.obstacleMsg}`; obsEl.classList.remove('hidden'); }
+            else { obsEl.classList.add('hidden'); }
 
-            document.getElementById('hud-badge').textContent = badgeText;
-            document.getElementById('hud-concept').textContent = mission.concept;
-            document.getElementById('hud-title').textContent = fullTitle;
-            document.getElementById('hud-quote').textContent = mission.quote;
-            document.getElementById('hud-goal').textContent = mission.goal;
-            document.getElementById('hud-implicit-hint').innerHTML = `💡 <strong>Guía Implícita:</strong> ${mission.implicitGuide}`;
+            document.getElementById('hud-badge').textContent = badge;
+            document.getElementById('hud-concept').textContent = m.concept;
+            document.getElementById('hud-title').textContent = title;
+            document.getElementById('hud-quote').textContent = m.quote;
+            document.getElementById('hud-goal').textContent = `🎯 ${m.goal}`;
+            document.getElementById('hud-implicit').innerHTML = `💡 <strong>Guía Implícita:</strong> ${m.implicit}`;
 
-            setGuideDropdown(false);
-            if (!skipBriefingModal) {
-                openBriefingModal();
-            }
-
-            updateTelemetryPanel();
-            updateHolographicPreview();
+            toggleGuide(false);
+            if (!skipModal) document.getElementById('modal-briefing').classList.remove('hidden');
+            updateTelemetry();
+            updatePreview();
         }
 
-        function startFreePractice(skipModal = false) {
-            state.freePractice = true;
+        function startFreeMode(skipModal) {
+            state.freeMode = true;
             currentPi = { x: 0, y: 0, z: 0 };
             currentPf = { x: 4, y: 3, z: 2 };
             state.maxVectors = 99;
-            state.vectorsRemaining = 99;
-            state.energyUsed = 0;
+            state.vectorsLeft = 99;
 
-            showSimulationScreen();
+            enter3DView();
             robot.effector.position.copy(mathToWorld(currentPi));
             targetGroup.position.copy(mathToWorld(currentPf));
-            renderLevelObstacles(null);
-            clearTrailsAndInputs();
+            renderObstacles(null);
+            clearInputsAndTrails();
 
-            document.getElementById('briefing-badge').textContent = 'MODO LIBRE • LABORATORIO 3D';
-            document.getElementById('briefing-concept').textContent = 'Exploración Vectorial en R³';
-            document.getElementById('briefing-title').textContent = 'Quirófano de Práctica Libre Da Vinci';
-            document.getElementById('briefing-quote').textContent = '🦾 Entorno abierto sin restricciones de presupuesto para experimentar con vectores en 3D.';
-            document.getElementById('briefing-goal').textContent = 'Experimenta ingresando cualquier vector (X, Y, Z) y observa las proyecciones ortogonales y el movimiento del brazo Da Vinci.';
-            document.getElementById('briefing-pi').textContent = '(0, 0, 0)';
-            document.getElementById('briefing-pf').textContent = '(4, 3, 2)';
-            document.getElementById('briefing-budget').textContent = 'Ilimitado';
-            document.getElementById('briefing-obstacle-alert').classList.add('hidden');
-            document.getElementById('briefing-implicit').innerHTML = '💡 <strong>Guía Implícita:</strong> Prueba vectores positivos y negativos en los tres ejes y observa el cambio de magnitud |V| y ángulo θxy.';
+            document.getElementById('brief-badge').textContent = 'MODO LIBRE';
+            document.getElementById('brief-concept').textContent = 'Práctica 3D sin límite';
+            document.getElementById('brief-title').textContent = 'Quirófano de Práctica Libre Da Vinci';
+            document.getElementById('brief-quote').textContent = '🦾 Experimenta libremente con vectores (X, Y, Z) sin restricciones.';
+            document.getElementById('brief-goal').textContent = '🎯 Practica el cálculo de d = Pᶠ - Pᵢ con objetivos dinámicos.';
+            document.getElementById('brief-pi').textContent = '(0, 0, 0)';
+            document.getElementById('brief-pf').textContent = '(4, 3, 2)';
+            document.getElementById('brief-limit').textContent = 'Ilimitado';
+            document.getElementById('brief-obstacle').classList.add('hidden');
+            document.getElementById('brief-implicit').innerHTML = '💡 <strong>Guía Implícita:</strong> Modifica X, Y, Z y observa las proyecciones ortogonales en tiempo real.';
 
             document.getElementById('hud-badge').textContent = 'MODO LIBRE';
-            document.getElementById('hud-concept').textContent = 'Laboratorio R³';
-            document.getElementById('hud-title').textContent = 'Quirófano de Práctica Libre Da Vinci';
-            document.getElementById('hud-quote').textContent = '🦾 Entorno abierto de experimentación vectorial 3D.';
-            document.getElementById('hud-goal').textContent = 'Alcanza los objetivos dinámicos en el quirófano.';
-            document.getElementById('hud-implicit-hint').innerHTML = '💡 Observa cómo las proyecciones ΔX, ΔY, ΔZ forman una caja ortogonal hasta el destino.';
+            document.getElementById('hud-concept').textContent = 'Práctica 3D';
+            document.getElementById('hud-title').textContent = 'Quirófano de Práctica Libre';
+            document.getElementById('hud-quote').textContent = '🦾 Práctica libre sin límite de vectores.';
+            document.getElementById('hud-goal').textContent = '🎯 Alcanza los objetivos aleatorios.';
+            document.getElementById('hud-implicit').innerHTML = '💡 d = Pᶠ - Pᵢ.';
 
-            setGuideDropdown(false);
-            if (!skipModal) openBriefingModal();
-
-            updateTelemetryPanel();
-            updateHolographicPreview();
+            toggleGuide(false);
+            if (!skipModal) document.getElementById('modal-briefing').classList.remove('hidden');
+            updateTelemetry();
+            updatePreview();
         }
 
-        function showSimulationScreen() {
+        function enter3DView() {
             document.getElementById('screen-hub').classList.add('hidden');
             document.getElementById('screen-skills').classList.add('hidden');
+            document.getElementById('modal-complete').classList.add('hidden');
             document.getElementById('hud-3d').classList.remove('hidden');
-            document.getElementById('hud-3d').classList.add('flex');
-            hideToast();
+            document.getElementById('label-pi').classList.remove('hidden');
+            document.getElementById('label-pf').classList.remove('hidden');
         }
 
-        function clearTrailsAndInputs() {
-            while (trailGroup.children.length > 0) {
-                trailGroup.remove(trailGroup.children[0]);
-            }
-            document.getElementById('input-x').value = 0;
-            document.getElementById('input-y').value = 0;
-            document.getElementById('input-z').value = 0;
+        function exitToHub() {
+            document.getElementById('hud-3d').classList.add('hidden');
+            document.getElementById('modal-briefing').classList.add('hidden');
+            document.getElementById('modal-complete').classList.add('hidden');
+            document.getElementById('label-pi').classList.add('hidden');
+            document.getElementById('label-pf').classList.add('hidden');
+            document.getElementById('label-preview').classList.add('hidden');
+            document.getElementById('screen-hub').classList.remove('hidden');
+            renderHub();
         }
 
-        function updateTelemetryPanel() {
+        function clearInputsAndTrails() {
+            while (trailGroup.children.length) trailGroup.remove(trailGroup.children[0]);
+            document.getElementById('inp-x').value = 0;
+            document.getElementById('inp-y').value = 0;
+            document.getElementById('inp-z').value = 0;
+        }
+
+        function updateTelemetry() {
             document.getElementById('tel-pi').textContent = `(${currentPi.x.toFixed(1)}, ${currentPi.y.toFixed(1)}, ${currentPi.z.toFixed(1)})`;
             document.getElementById('tel-pf').textContent = `(${currentPf.x.toFixed(1)}, ${currentPf.y.toFixed(1)}, ${currentPf.z.toFixed(1)})`;
-
-            const dist = Math.hypot(currentPf.x - currentPi.x, currentPf.y - currentPi.y, currentPf.z - currentPi.z);
-            document.getElementById('tel-dist').textContent = `${dist.toFixed(2)} u`;
-            document.getElementById('tel-vectors-left').textContent = state.freePractice
-                ? '∞'
-                : `${state.vectorsRemaining} / ${state.maxVectors}`;
-            document.getElementById('tel-energy').textContent = `${state.energyUsed.toFixed(2)} kJ`;
+            const d = Math.hypot(currentPf.x - currentPi.x, currentPf.y - currentPi.y, currentPf.z - currentPi.z);
+            document.getElementById('tel-dist').textContent = `${d.toFixed(2)} u`;
+            document.getElementById('val-left').textContent = state.freeMode ? '∞' : `${state.vectorsLeft}/${state.maxVectors}`;
         }
 
-        function openBriefingModal() {
-            const modal = document.getElementById('modal-briefing');
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
+        function toggleGuide(open) {
+            document.getElementById('guide-body').classList.toggle('hidden', !open);
+            document.getElementById('guide-arrow').textContent = open ? '▲' : '▼';
         }
 
-        function closeBriefingModal() {
-            const modal = document.getElementById('modal-briefing');
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-        }
-
-        function setGuideDropdown(open) {
-            const body = document.getElementById('hud-guide-body');
-            const arrow = document.getElementById('hud-guide-arrow');
-            if (open) {
-                body.classList.remove('hidden');
-                arrow.textContent = '▲';
-            } else {
-                body.classList.add('hidden');
-                arrow.textContent = '▼';
-            }
-        }
-
-        function showToast(title, bodyHtml, type, showActions) {
+        let toastTimer = null;
+        function showToast(title, msg, type) {
             const toast = document.getElementById('hud-toast');
-            const box = document.getElementById('hud-toast-box');
-            const titleEl = document.getElementById('hud-toast-title');
-            const bodyEl = document.getElementById('hud-toast-body');
-            const actionsEl = document.getElementById('hud-toast-actions');
+            const box = document.getElementById('toast-box');
+            const tEl = document.getElementById('toast-title');
+            tEl.textContent = title;
+            document.getElementById('toast-msg').textContent = msg;
 
-            titleEl.innerHTML = title;
-            bodyEl.innerHTML = bodyHtml;
+            const colors = { err: '#f43f5e', ok: '#34d399', warn: '#fbbf24', info: '#38bdf8' };
+            const col = colors[type] || '#38bdf8';
+            box.style.borderColor = col;
+            tEl.style.color = col;
 
-            box.className = 'glass-panel p-5 rounded-2xl border-2 text-center shadow-2xl ';
-            if (type === 'success') {
-                box.classList.add('border-emerald-400');
-                titleEl.className = 'text-lg font-extrabold text-emerald-300 mb-1';
-            } else if (type === 'error') {
-                box.classList.add('border-rose-500');
-                titleEl.className = 'text-lg font-extrabold text-rose-400 mb-1';
-            } else {
-                box.classList.add('border-cyan-400');
-                titleEl.className = 'text-lg font-extrabold text-cyan-300 mb-1';
-            }
-
-            if (showActions) {
-                actionsEl.classList.remove('hidden');
-            } else {
-                actionsEl.classList.add('hidden');
-                setTimeout(() => {
-                    if (actionsEl.classList.contains('hidden')) hideToast();
-                }, 4200);
-            }
-            toast.style.opacity = '1';
+            toast.classList.add('visible');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toast.classList.remove('visible'), 3000);
         }
 
-        function hideToast() {
-            document.getElementById('hud-toast').style.opacity = '0';
-        }
-
-        // Proyección de etiquetas 3D a 2D
         function updateLabels2D() {
             if (document.getElementById('hud-3d').classList.contains('hidden')) return;
-            project3DLabel(robot.effector.position.clone().add(new THREE.Vector3(0, 0.52, 0)), 'label-pi', `Pinza Pᵢ (${currentPi.x}, ${currentPi.y}, ${currentPi.z})`);
-            project3DLabel(targetGroup.position.clone().add(new THREE.Vector3(0, 0.52, 0)), 'label-pf', `🎯 Pᶠ (${currentPf.x}, ${currentPf.y}, ${currentPf.z})`);
+            const proj = (pos, id, txt) => {
+                const el = document.getElementById(id);
+                const v = pos.clone().project(camera);
+                if (v.z > 1) { el.style.opacity = '0'; return; }
+                el.style.opacity = '1';
+                el.style.left = ((v.x * 0.5 + 0.5) * window.innerWidth) + 'px';
+                el.style.top = ((-v.y * 0.5 + 0.5) * window.innerHeight) + 'px';
+                if (txt) el.textContent = txt;
+            };
+            proj(robot.effector.position.clone().add(new THREE.Vector3(0, 0.55, 0)), 'label-pi', `Pinza Pᵢ (${currentPi.x}, ${currentPi.y}, ${currentPi.z})`);
+            proj(targetGroup.position.clone().add(new THREE.Vector3(0, 0.55, 0)), 'label-pf', `🎯 Pᶠ (${currentPf.x}, ${currentPf.y}, ${currentPf.z})`);
 
-            const vx = parseFloat(document.getElementById('input-x').value) || 0;
-            const vy = parseFloat(document.getElementById('input-y').value) || 0;
-            const vz = parseFloat(document.getElementById('input-z').value) || 0;
+            const vx = parseFloat(document.getElementById('inp-x').value) || 0;
+            const vy = parseFloat(document.getElementById('inp-y').value) || 0;
+            const vz = parseFloat(document.getElementById('inp-z').value) || 0;
             if (Math.hypot(vx, vy, vz) > 0.05) {
-                const destW = mathToWorld({ x: currentPi.x + vx, y: currentPi.y + vy, z: currentPi.z + vz });
-                project3DLabel(destW.add(new THREE.Vector3(0, 0.35, 0)), 'label-preview');
+                const w = mathToWorld({ x: currentPi.x + vx, y: currentPi.y + vy, z: currentPi.z + vz });
+                proj(w.add(new THREE.Vector3(0, 0.35, 0)), 'label-preview');
             }
         }
 
-        function project3DLabel(worldPos, elId, text) {
-            const el = document.getElementById(elId);
-            if (!el) return;
-            const v = worldPos.clone().project(camera);
-            if (v.z > 1) {
-                el.style.opacity = '0';
-                return;
-            }
-            el.style.opacity = '1';
-            el.style.left = `${(v.x * 0.5 + 0.5) * window.innerWidth}px`;
-            el.style.top = `${(-v.y * 0.5 + 0.5) * window.innerHeight}px`;
-            if (text) el.textContent = text;
+        function setCamPreset(btnId, radius, theta, phi) {
+            document.querySelectorAll('.cam-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(btnId).classList.add('active');
+            camSpherical = { radius, theta, phi };
+            updateCameraFromSpherical();
         }
 
-        // =========================================================================
-        // EVENTOS DE INTERFAZ Y CÁMARA
-        // =========================================================================
-        function bindUIEvents() {
-            ['input-x', 'input-y', 'input-z'].forEach(id => {
-                document.getElementById(id).addEventListener('input', updateHolographicPreview);
+        /* =========================================================
+           EVENTOS Y BUCLE PRINCIPAL
+           ========================================================= */
+        function bindEvents() {
+            ['inp-x', 'inp-y', 'inp-z'].forEach(id => {
+                document.getElementById(id).addEventListener('input', updatePreview);
+            });
+            document.querySelectorAll('.stepper button').forEach(btn => {
+                btn.onclick = () => {
+                    const inp = document.getElementById('inp-' + btn.dataset.axis);
+                    inp.value = (parseFloat(inp.value) || 0) + parseFloat(btn.dataset.step);
+                    updatePreview();
+                };
             });
 
-            document.querySelectorAll('.step-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const axis = btn.getAttribute('data-axis');
-                    const step = parseFloat(btn.getAttribute('data-step'));
-                    const inp = document.getElementById(`input-${axis}`);
-                    inp.value = (parseFloat(inp.value) || 0) + step;
-                    updateHolographicPreview();
-                });
-            });
+            document.getElementById('btn-apply').onclick = applyVector;
+            document.getElementById('btn-start-level').onclick = () => document.getElementById('modal-briefing').classList.add('hidden');
+            document.getElementById('btn-guide-toggle').onclick = () => {
+                toggleGuide(document.getElementById('guide-body').classList.contains('hidden'));
+            };
+            document.getElementById('btn-exit-hub').onclick = exitToHub;
+            document.getElementById('btn-restart').onclick = () => state.freeMode ? startFreeMode(true) : startMission(state.currentId, true);
 
-            document.getElementById('btn-apply-vector').addEventListener('click', applyVector);
-            document.getElementById('btn-start-challenge').addEventListener('click', closeBriefingModal);
-
-            document.getElementById('btn-toggle-guide').addEventListener('click', () => {
-                const body = document.getElementById('hud-guide-body');
-                setGuideDropdown(body.classList.contains('hidden'));
-            });
-            document.getElementById('btn-hide-guide').addEventListener('click', (e) => {
-                e.stopPropagation();
-                setGuideDropdown(false);
-            });
-            document.getElementById('btn-reopen-modal').addEventListener('click', (e) => {
-                e.stopPropagation();
-                setGuideDropdown(false);
-                openBriefingModal();
-            });
-
-            document.getElementById('btn-exit-hub').addEventListener('click', () => {
-                document.getElementById('hud-3d').classList.add('hidden');
-                document.getElementById('hud-3d').classList.remove('flex');
-                document.getElementById('screen-hub').classList.remove('hidden');
-                renderHub();
-            });
-
-            document.getElementById('btn-restart-level').addEventListener('click', () => {
-                if (state.freePractice) startFreePractice(true);
-                else startMission(state.currentMissionId, true);
-            });
-
-            document.getElementById('btn-open-skills-hub').addEventListener('click', () => {
+            document.getElementById('btn-open-skills').onclick = () => {
                 renderSkills();
                 document.getElementById('screen-skills').classList.remove('hidden');
-                document.getElementById('screen-skills').classList.add('flex');
-            });
-            document.getElementById('btn-hud-skills').addEventListener('click', () => {
-                renderSkills();
-                document.getElementById('screen-skills').classList.remove('hidden');
-                document.getElementById('screen-skills').classList.add('flex');
-            });
-            document.getElementById('btn-close-skills').addEventListener('click', () => {
-                document.getElementById('screen-skills').classList.add('hidden');
-                document.getElementById('screen-skills').classList.remove('flex');
-            });
-            document.getElementById('btn-unlock-all-skills').addEventListener('click', () => {
-                state.demoMode = true;
-                document.getElementById('toggle-demo-mode').checked = true;
-                renderSkills();
-                renderHub();
-            });
+            };
+            document.getElementById('btn-close-skills').onclick = () => document.getElementById('screen-skills').classList.add('hidden');
+            document.getElementById('btn-free-mode').onclick = () => startFreeMode(false);
 
-            document.getElementById('toggle-demo-mode').addEventListener('change', (e) => {
-                state.demoMode = e.target.checked;
-                renderHub();
-                renderSkills();
-            });
+            document.getElementById('btn-comp-next').onclick = () => {
+                document.getElementById('modal-complete').classList.add('hidden');
+                startMission((state.currentId % 10) + 1, false);
+            };
+            document.getElementById('btn-comp-hub').onclick = exitToHub;
 
-            document.getElementById('btn-free-practice').addEventListener('click', () => startFreePractice(false));
-
-            const modalPed = document.getElementById('modal-pedagogy');
-            document.getElementById('btn-open-pedagogy').addEventListener('click', () => {
-                modalPed.classList.remove('hidden');
-                modalPed.classList.add('flex');
-            });
-            ['btn-close-pedagogy', 'btn-ok-pedagogy'].forEach(id => {
-                document.getElementById(id).addEventListener('click', () => {
-                    modalPed.classList.add('hidden');
-                    modalPed.classList.remove('flex');
-                });
-            });
-
-            document.getElementById('btn-toggle-guides').addEventListener('click', (e) => {
-                state.showGuides = !state.showGuides;
-                e.target.textContent = `ΔX,ΔY,ΔZ: ${state.showGuides ? 'ON' : 'OFF'}`;
-                updateHolographicPreview();
-            });
-
-            document.getElementById('btn-next-mission').addEventListener('click', () => {
-                if (state.freePractice) {
-                    hideToast();
-                } else {
-                    const nextId = (state.currentMissionId % 10) + 1;
-                    startMission(nextId, false);
-                }
-            });
-
-            document.getElementById('btn-back-hub-toast').addEventListener('click', () => {
-                hideToast();
-                document.getElementById('hud-3d').classList.add('hidden');
-                document.getElementById('hud-3d').classList.remove('flex');
-                document.getElementById('screen-hub').classList.remove('hidden');
-                renderHub();
-            });
-
-            // Selectores rápidos de cámara
-            document.getElementById('cam-3d').addEventListener('click', () => {
-                moveCamera({ x: 1.5, y: 10.5, z: 14.5 }, { x: 2.0, y: 1.8, z: -2.0 });
-            });
-            document.getElementById('cam-xy').addEventListener('click', () => {
-                moveCamera({ x: 2.0, y: 19.0, z: -1.99 }, { x: 2.0, y: 1.45, z: -2.0 });
-            });
-            document.getElementById('cam-xz').addEventListener('click', () => {
-                moveCamera({ x: 2.0, y: 3.2, z: 14.0 }, { x: 2.0, y: 2.4, z: -2.0 });
-            });
+            document.getElementById('cam-3d').onclick = () => setCamPreset('cam-3d', 17.5, 0.15, 1.02);
+            document.getElementById('cam-xy').onclick = () => setCamPreset('cam-xy', 19.0, 0.0, 0.13);
+            document.getElementById('cam-xz').onclick = () => setCamPreset('cam-xz', 16.5, 0.0, 1.48);
         }
 
-        function moveCamera(pos, target) {
-            new TWEEN.Tween(camera.position).to(pos, 750).easing(TWEEN.Easing.Quadratic.Out).start();
-            new TWEEN.Tween(controls.target).to(target, 750).easing(TWEEN.Easing.Quadratic.Out).start();
-        }
-
-        function animate(time) {
+        function animate(now) {
             requestAnimationFrame(animate);
-            TWEEN.update(time);
-            controls.update();
+            activeTweens = activeTweens.filter(tw => tw.update(now));
             if (targetRing) targetRing.rotation.z += 0.025;
             updateDaVinciIK();
             updateLabels2D();
             renderer.render(scene, camera);
         }
 
-        window.onload = () => {
+        window.onload = function () {
             initThree();
-            bindUIEvents();
+            bindEvents();
             renderHub();
             renderSkills();
+            requestAnimationFrame(animate);
         };
     </script>
 </body>
